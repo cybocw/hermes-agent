@@ -11,6 +11,7 @@ def _make_cli_stub():
     from cli import HermesCLI
 
     cli = HermesCLI.__new__(HermesCLI)
+    cli.plain_repl = False
     cli.show_reasoning = False
     cli._stream_buf = ""
     cli._stream_started = False
@@ -37,6 +38,28 @@ def _make_cli_stub():
         cli._reasoning_emitted.append(text)
     cli._stream_reasoning_delta = mock_reasoning
 
+    return cli
+
+
+def _make_plain_stream_cli_stub(interactive: bool):
+    from cli import HermesCLI
+
+    cli = HermesCLI.__new__(HermesCLI)
+    cli.plain_repl = True
+    cli.show_reasoning = False
+    cli._stream_buf = ""
+    cli._stream_started = True
+    cli._stream_box_opened = False
+    cli._stream_prefilt = ""
+    cli._in_reasoning_block = False
+    cli._reasoning_box_opened = False
+    cli._reasoning_buf = ""
+    cli._reasoning_preview_buf = ""
+    cli._deferred_content = ""
+    cli._stream_text_ansi = ""
+    cli._stream_last_was_newline = True
+    cli._plain_session_is_interactive = lambda: interactive
+    cli._close_reasoning_box = lambda: None
     return cli
 
 
@@ -136,3 +159,31 @@ class TestFlushRecovery:
         assert not cli._in_reasoning_block
         full = "".join(cli._emitted)
         assert "Launch production" in full
+
+
+class TestPlainStreamingOutput:
+    def test_noninteractive_plain_stream_skips_frame_markers(self):
+        cli = _make_plain_stream_cli_stub(interactive=False)
+
+        from unittest.mock import patch
+        captured = []
+
+        with patch("cli._cprint", side_effect=captured.append):
+            cli._emit_stream_text("OK\n")
+            cli._flush_stream()
+
+        assert captured == ["OK"]
+        assert cli._stream_box_opened is True
+
+    def test_interactive_plain_stream_skips_frame_markers(self):
+        cli = _make_plain_stream_cli_stub(interactive=True)
+
+        from unittest.mock import patch
+        captured = []
+
+        with patch("cli._cprint", side_effect=captured.append):
+            cli._emit_stream_text("All set\n")
+            cli._flush_stream()
+
+        assert captured == ["All set"]
+        assert cli._stream_box_opened is True

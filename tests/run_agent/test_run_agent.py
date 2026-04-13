@@ -9,6 +9,7 @@ import io
 import json
 import logging
 import re
+import tomllib
 import uuid
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -1131,6 +1132,21 @@ class TestExecuteToolCalls:
 
         mock_print.assert_called_once()
         assert "search" in str(mock_print.call_args.args[0]).lower()
+        assert len(messages) == 1
+        assert messages[0]["role"] == "tool"
+
+    def test_quiet_tool_output_suppressed_in_parseable_quiet_mode(self, agent):
+        tc = _mock_tool_call(name="web_search", arguments='{"q":"test"}', call_id="c1")
+        mock_msg = _mock_assistant_msg(content="", tool_calls=[tc])
+        messages = []
+        agent.tool_progress_callback = None
+        agent.suppress_status_output = True
+
+        with patch("run_agent.handle_function_call", return_value="search result"), \
+             patch.object(agent, "_safe_print") as mock_print:
+            agent._execute_tool_calls(mock_msg, messages, "task-1")
+
+        mock_print.assert_not_called()
         assert len(messages) == 1
         assert messages[0]["role"] == "tool"
 
@@ -2965,6 +2981,13 @@ def test_quiet_spinner_suppressed_on_non_tty_without_print_fn(agent):
         assert agent._should_start_quiet_spinner() is False
 
 
+def test_quiet_spinner_suppressed_in_parseable_quiet_mode(agent):
+    agent._print_fn = lambda *_a, **_kw: None
+    agent.suppress_status_output = True
+    with patch.object(run_agent.sys.stdout, "isatty", return_value=True):
+        assert agent._should_start_quiet_spinner() is False
+
+
 def test_is_openai_client_closed_honors_custom_client_flag():
     assert AIAgent._is_openai_client_closed(SimpleNamespace(is_closed=True)) is True
     assert AIAgent._is_openai_client_closed(SimpleNamespace(is_closed=False)) is False
@@ -3754,3 +3777,89 @@ class TestDeadRetryCode:
             f"Expected 2 occurrences of 'if retry_count >= max_retries:' "
             f"but found {occurrences}"
         )
+
+
+def test_cli_main_delegates_to_fire():
+    with patch.object(run_agent.fire, "Fire") as mock_fire:
+        run_agent.cli_main()
+
+    mock_fire.assert_called_once_with(run_agent.main)
+
+
+def test_pyproject_console_script_targets_cli_main():
+    pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+
+    assert data["project"]["scripts"]["hermes-agent"] == "run_agent:cli_main"
+
+
+def test_main_resolves_runtime_provider_before_creating_agent():
+    resolved_pool = object()
+    fake_agent = MagicMock()
+    fake_agent.run_conversation.return_value = {
+        "completed": True,
+        "api_calls": 1,
+        "messages": [{"role": "assistant", "content": "OK"}],
+        "final_response": "OK",
+    }
+
+    with (
+        patch("agent.auxiliary_client._read_main_model", return_value="gpt-5.4"),
+        patch(
+            "hermes_cli.runtime_provider.resolve_runtime_provider",
+            return_value={
+                "provider": "custom",
+                "api_mode": "codex_responses",
+                "base_url": "https://example.test/openai",
+                "api_key": "runtime-key",
+                "command": "codex",
+                "args": ["serve"],
+                "credential_pool": resolved_pool,
+            },
+        ),
+        patch.object(run_agent, "AIAgent", return_value=fake_agent) as mock_agent,
+    ):
+        run_agent.main(query="请只回复 OK", max_turns=1)
+
+    mock_agent.assert_called_once()
+    kwargs = mock_agent.call_args.kwargs
+    assert kwargs["model"] == "gpt-5.4"
+    assert kwargs["provider"] == "custom"
+    assert kwargs["api_mode"] == "codex_responses"
+    assert kwargs["base_url"] == "https://example.test/openai"
+    assert kwargs["api_key"] == "runtime-key"
+    assert kwargs["acp_command"] == "codex"
+    assert kwargs["acp_args"] == ["serve"]
+    assert kwargs["credential_pool"] is resolved_pool
+    fake_agent.run_conversation.assert_called_once_with("请只回复 OK")
+
+
+def test_main_prefers_explicit_model_over_configured_main_model():
+    fake_agent = MagicMock()
+    fake_agent.run_conversation.return_value = {
+        "completed": True,
+        "api_calls": 1,
+        "messages": [{"role": "assistant", "content": "OK"}],
+        "final_response": "OK",
+    }
+
+    with (
+        patch("agent.auxiliary_client._read_main_model", return_value="gpt-5.4"),
+        patch(
+            "hermes_cli.runtime_provider.resolve_runtime_provider",
+            return_value={
+                "provider": "custom",
+                "api_mode": "codex_responses",
+                "base_url": "https://example.test/openai",
+                "api_key": "runtime-key",
+            },
+        ),
+        patch.object(run_agent, "AIAgent", return_value=fake_agent) as mock_agent,
+    ):
+        run_agent.main(
+            query="请只回复 OK",
+            model="anthropic/claude-sonnet-4.6",
+            max_turns=1,
+        )
+
+    assert mock_agent.call_args.kwargs["model"] == "anthropic/claude-sonnet-4.6"

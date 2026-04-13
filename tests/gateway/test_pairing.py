@@ -1,11 +1,10 @@
 """Tests for gateway/pairing.py — DM pairing security system."""
 
 import json
-import os
 import time
-from pathlib import Path
 from unittest.mock import patch
 
+import gateway.pairing as pairing_module
 from gateway.pairing import (
     PairingStore,
     ALPHABET,
@@ -42,6 +41,22 @@ class TestSecureWrite:
         _secure_write(target, "data")
         mode = oct(target.stat().st_mode & 0o777)
         assert mode == "0o600"
+
+
+class TestPathResolution:
+    def test_store_uses_current_hermes_home_when_module_was_imported_earlier(
+        self, tmp_path, monkeypatch
+    ):
+        home = tmp_path / "hermes_home"
+        home.mkdir()
+        monkeypatch.setenv("HERMES_HOME", str(home))
+
+        with patch("gateway.pairing.PAIRING_DIR", pairing_module._IMPORT_PAIRING_DIR):
+            store = PairingStore()
+
+        assert store._pending_path("discord") == (
+            home / "platforms" / "pairing" / "discord-pending.json"
+        )
 
 
 # ---------------------------------------------------------------------------

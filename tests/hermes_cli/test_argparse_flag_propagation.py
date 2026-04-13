@@ -36,6 +36,7 @@ def _build_parser():
     parser.add_argument("--skills", "-s", action="append", default=None)
     parser.add_argument("--yolo", action="store_true", default=False)
     parser.add_argument("--pass-session-id", action="store_true", default=False)
+    parser.add_argument("--plain", action="store_true", default=False)
 
     subparsers = parser.add_subparsers(dest="command")
     chat = subparsers.add_parser("chat")
@@ -47,6 +48,8 @@ def _build_parser():
     chat.add_argument("--skills", "-s", action="append",
                       default=argparse.SUPPRESS)
     chat.add_argument("--pass-session-id", action="store_true",
+                      default=argparse.SUPPRESS)
+    chat.add_argument("--plain", action="store_true",
                       default=argparse.SUPPRESS)
     chat.add_argument("--resume", "-r", metavar="SESSION_ID",
                       default=argparse.SUPPRESS)
@@ -85,6 +88,11 @@ class TestFlagBeforeSubcommand:
         args = parser.parse_args(["-r", "abc123", "chat"])
         assert getattr(args, "resume", None) == "abc123"
 
+    def test_plain_before_chat(self):
+        parser = _build_parser()
+        args = parser.parse_args(["--plain", "chat"])
+        assert getattr(args, "plain", False) is True
+
 
 class TestFlagAfterSubcommand:
     """Flags placed after 'chat' must still work."""
@@ -109,6 +117,11 @@ class TestFlagAfterSubcommand:
         args = parser.parse_args(["chat", "-r", "abc123"])
         assert getattr(args, "resume", None) == "abc123"
 
+    def test_plain_after_chat(self):
+        parser = _build_parser()
+        args = parser.parse_args(["chat", "--plain"])
+        assert getattr(args, "plain", False) is True
+
 
 class TestNoSubcommandDefaults:
     """When no subcommand is given, flags must work and defaults must hold."""
@@ -126,6 +139,7 @@ class TestNoSubcommandDefaults:
         assert getattr(args, "worktree", False) is False
         assert getattr(args, "skills", None) is None
         assert getattr(args, "resume", None) is None
+        assert getattr(args, "plain", False) is False
 
     def test_defaults_chat_no_flags(self):
         parser = _build_parser()
@@ -134,6 +148,7 @@ class TestNoSubcommandDefaults:
         assert getattr(args, "yolo", False) is False
         assert getattr(args, "worktree", False) is False
         assert getattr(args, "skills", None) is None
+        assert getattr(args, "plain", False) is False
 
 
 class TestYoloEnvVar:

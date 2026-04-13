@@ -20,6 +20,19 @@ def test_opencode_go_appears_when_api_key_set():
     assert opencode_go["source"] == "built-in"
 
 
+@patch("agent.models_dev.fetch_models_dev", return_value={})
+@patch.dict(os.environ, {"OPENCODE_GO_API_KEY": "test-key"}, clear=False)
+def test_opencode_go_stays_built_in_when_models_dev_snapshot_is_missing(_fetch_mock):
+    """A stale/missing catalog snapshot must not downgrade opencode-go to a Hermes-only source."""
+    providers = list_authenticated_providers(current_provider="openrouter")
+
+    opencode_go = next((p for p in providers if p["slug"] == "opencode-go"), None)
+
+    assert opencode_go is not None
+    assert opencode_go["name"] == "OpenCode Go"
+    assert opencode_go["source"] == "built-in"
+
+
 def test_opencode_go_not_appears_when_no_creds():
     """opencode-go should NOT appear when no credentials are set."""
     # Ensure OPENCODE_GO_API_KEY is not set

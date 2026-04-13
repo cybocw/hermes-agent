@@ -19,6 +19,7 @@ import shutil
 import sys
 import json
 import atexit
+import getpass
 import tempfile
 import time
 import uuid
@@ -1048,7 +1049,7 @@ def _termux_example_image_path(filename: str = "cat.png") -> str:
 
 
 def _split_path_input(raw: str) -> tuple[str, str]:
-    """Split a leading file path token from trailing free-form text.
+    r"""Split a leading file path token from trailing free-form text.
 
     Supports quoted paths and backslash-escaped spaces so callers can accept
     inputs like:
@@ -1491,6 +1492,7 @@ class HermesCLI:
         resume: str = None,
         checkpoints: bool = False,
         pass_session_id: bool = False,
+        plain_repl: bool = False,
     ):
         """
         Initialize the Hermes CLI.
@@ -1506,11 +1508,14 @@ class HermesCLI:
             compact: Use compact display mode
             resume: Session ID to resume (restores conversation history from SQLite)
             pass_session_id: Include the session ID in the agent's system prompt
+            plain_repl: Use a simple input() REPL instead of prompt_toolkit
         """
         # Initialize Rich console
         self.console = Console()
         self.config = CLI_CONFIG
         self.compact = compact if compact is not None else CLI_CONFIG["display"].get("compact", False)
+        _plain_env = str(os.getenv("HERMES_PLAIN_REPL", "")).strip().lower()
+        self.plain_repl = bool(plain_repl or _plain_env in {"1", "true", "yes", "on"})
         # tool_progress: "off", "new", "all", "verbose" (from config.yaml display section)
         # YAML 1.1 parses bare `off` as boolean False — normalise to string.
         _raw_tp = CLI_CONFIG["display"].get("tool_progress", "all")
@@ -2242,6 +2247,8 @@ class HermesCLI:
         """
         if not text:
             return
+        if self._plain_session_uses_raw_output():
+            return
         self._reasoning_shown_this_turn = True
         if getattr(self, "_stream_box_opened", False):
             return
@@ -2427,6 +2434,7 @@ class HermesCLI:
         """Emit filtered text to the streaming display."""
         if not text:
             return
+        raw_plain_output = self._plain_session_uses_raw_output()
 
         # When show_reasoning is on and reasoning is still rendering,
         # defer content until the reasoning box closes.  This ensures the
@@ -2445,26 +2453,27 @@ class HermesCLI:
             if not text:
                 return
             self._stream_box_opened = True
-            try:
-                from hermes_cli.skin_engine import get_active_skin
-                _skin = get_active_skin()
-                label = _skin.get_branding("response_label", "⚕ Hermes")
-                _text_hex = _skin.get_color("banner_text", "#FFF8DC")
-            except Exception:
-                label = "⚕ Hermes"
-                _text_hex = "#FFF8DC"
-            # Build a true-color ANSI escape for the response text color
-            # so streamed content matches the Rich Panel appearance.
-            try:
-                _r = int(_text_hex[1:3], 16)
-                _g = int(_text_hex[3:5], 16)
-                _b = int(_text_hex[5:7], 16)
-                self._stream_text_ansi = f"\033[38;2;{_r};{_g};{_b}m"
-            except (ValueError, IndexError):
-                self._stream_text_ansi = ""
-            w = shutil.get_terminal_size().columns
-            fill = w - 2 - len(label)
-            _cprint(f"\n{_GOLD}╭─{label}{'─' * max(fill - 1, 0)}╮{_RST}")
+            if not raw_plain_output:
+                try:
+                    from hermes_cli.skin_engine import get_active_skin
+                    _skin = get_active_skin()
+                    label = _skin.get_branding("response_label", "⚕ Hermes")
+                    _text_hex = _skin.get_color("banner_text", "#FFF8DC")
+                except Exception:
+                    label = "⚕ Hermes"
+                    _text_hex = "#FFF8DC"
+                # Build a true-color ANSI escape for the response text color
+                # so streamed content matches the Rich Panel appearance.
+                try:
+                    _r = int(_text_hex[1:3], 16)
+                    _g = int(_text_hex[3:5], 16)
+                    _b = int(_text_hex[5:7], 16)
+                    self._stream_text_ansi = f"\033[38;2;{_r};{_g};{_b}m"
+                except (ValueError, IndexError):
+                    self._stream_text_ansi = ""
+                w = shutil.get_terminal_size().columns
+                fill = w - 2 - len(label)
+                _cprint(f"\n{_GOLD}╭─{label}{'─' * max(fill - 1, 0)}╮{_RST}")
 
         self._stream_buf += text
 
@@ -2472,10 +2481,14 @@ class HermesCLI:
         _tc = getattr(self, "_stream_text_ansi", "")
         while "\n" in self._stream_buf:
             line, self._stream_buf = self._stream_buf.split("\n", 1)
-            _cprint(f"{_tc}{line}{_RST}" if _tc else line)
+            if raw_plain_output:
+                _cprint(line)
+            else:
+                _cprint(f"{_tc}{line}{_RST}" if _tc else line)
 
     def _flush_stream(self) -> None:
         """Emit any remaining partial line from the stream buffer and close the box."""
+        raw_plain_output = self._plain_session_uses_raw_output()
         # If we're still inside a "reasoning block" at end-of-stream, it was
         # a false positive — the model mentioned a tag like <think> in prose
         # but never closed it.  Recover the buffered content as regular text.
@@ -2488,12 +2501,15 @@ class HermesCLI:
         self._close_reasoning_box()
 
         if self._stream_buf:
-            _tc = getattr(self, "_stream_text_ansi", "")
-            _cprint(f"{_tc}{self._stream_buf}{_RST}" if _tc else self._stream_buf)
+            if raw_plain_output:
+                _cprint(self._stream_buf)
+            else:
+                _tc = getattr(self, "_stream_text_ansi", "")
+                _cprint(f"{_tc}{self._stream_buf}{_RST}" if _tc else self._stream_buf)
             self._stream_buf = ""
 
         # Close the response box
-        if self._stream_box_opened:
+        if self._stream_box_opened and not raw_plain_output:
             w = shutil.get_terminal_size().columns
             _cprint(f"{_GOLD}╰{'─' * (w - 2)}╯{_RST}")
 
@@ -2664,7 +2680,15 @@ class HermesCLI:
         route["request_overrides"] = overrides
         return route
 
-    def _init_agent(self, *, model_override: str = None, runtime_override: dict = None, route_label: str = None, request_overrides: dict | None = None) -> bool:
+    def _init_agent(
+        self,
+        *,
+        model_override: str = None,
+        runtime_override: dict = None,
+        route_label: str = None,
+        request_overrides: dict | None = None,
+        suppress_cli_rendering: bool = False,
+    ) -> bool:
         """
         Initialize the agent on first use.
         When resuming a session, restores conversation history from SQLite.
@@ -2735,6 +2759,22 @@ class HermesCLI:
                 "credential_pool": getattr(self, "_credential_pool", None),
             }
             effective_model = model_override or self.model
+            reasoning_callback = None if suppress_cli_rendering else self._current_reasoning_callback()
+            thinking_callback = None if suppress_cli_rendering else self._on_thinking
+            tool_progress_callback = None if suppress_cli_rendering else self._on_tool_progress
+            tool_start_callback = None
+            tool_complete_callback = None
+            stream_delta_callback = None
+            tool_gen_callback = None
+
+            if not suppress_cli_rendering:
+                if self._inline_diffs_enabled:
+                    tool_start_callback = self._on_tool_start
+                    tool_complete_callback = self._on_tool_complete
+                if self.streaming_enabled:
+                    stream_delta_callback = self._stream_delta
+                    tool_gen_callback = self._on_tool_gen_start
+
             self.agent = AIAgent(
                 model=effective_model,
                 api_key=runtime.get("api_key"),
@@ -2762,19 +2802,22 @@ class HermesCLI:
                 session_id=self.session_id,
                 platform="cli",
                 session_db=self._session_db,
-                clarify_callback=self._clarify_callback,
-                reasoning_callback=self._current_reasoning_callback(),
+                clarify_callback=(
+                    self._plain_clarify_callback
+                    if self.plain_repl else self._clarify_callback
+                ),
+                reasoning_callback=reasoning_callback,
 
                 fallback_model=self._fallback_model,
-                thinking_callback=self._on_thinking,
+                thinking_callback=thinking_callback,
                 checkpoints_enabled=self.checkpoints_enabled,
                 checkpoint_max_snapshots=self.checkpoint_max_snapshots,
                 pass_session_id=self.pass_session_id,
-                tool_progress_callback=self._on_tool_progress,
-                tool_start_callback=self._on_tool_start if self._inline_diffs_enabled else None,
-                tool_complete_callback=self._on_tool_complete if self._inline_diffs_enabled else None,
-                stream_delta_callback=self._stream_delta if self.streaming_enabled else None,
-                tool_gen_callback=self._on_tool_gen_start if self.streaming_enabled else None,
+                tool_progress_callback=tool_progress_callback,
+                tool_start_callback=tool_start_callback,
+                tool_complete_callback=tool_complete_callback,
+                stream_delta_callback=stream_delta_callback,
+                tool_gen_callback=tool_gen_callback,
             )
             # Store reference for atexit memory provider shutdown
             global _active_agent_ref
@@ -3094,6 +3137,76 @@ class HermesCLI:
             style=_history_text_c,
         )
         self.console.print(panel)
+
+    def _plain_session_is_interactive(self) -> bool:
+        """Return True when plain mode still has a real stdin/stdout TTY."""
+        for stream in (sys.stdin, sys.stdout):
+            isatty = getattr(stream, "isatty", None)
+            if not callable(isatty):
+                return False
+            try:
+                if not isatty():
+                    return False
+            except Exception:
+                return False
+        return True
+
+    def _plain_session_uses_raw_output(self) -> bool:
+        """Return True when plain mode should avoid framed response rendering."""
+        return bool(getattr(self, "plain_repl", False))
+
+    def _suppress_tool_progress_output(self) -> bool:
+        """Return True when CLI progress chrome should stay silent."""
+        return (
+            self._plain_session_uses_raw_output()
+            or str(getattr(self, "tool_progress_mode", "all")) == "off"
+        )
+
+    def _show_interactive_intro(
+        self,
+        *,
+        show_banner: bool = True,
+        show_resume_history: bool = True,
+        show_welcome: bool = True,
+        show_skills: bool = True,
+        trailing_blank_line: bool = True,
+        welcome_text: Optional[str] = None,
+    ) -> None:
+        """Print the shared startup block for TUI and plain REPL."""
+        if show_banner:
+            self.show_banner()
+
+        if show_resume_history and self._resumed:
+            if self._preload_resumed_session():
+                self._display_resumed_history()
+
+        printed_intro = False
+        if show_welcome:
+            try:
+                from hermes_cli.skin_engine import get_active_skin
+                _welcome_skin = get_active_skin()
+                _welcome_text = welcome_text or _welcome_skin.get_branding(
+                    "welcome",
+                    "Welcome to Hermes Agent! Type your message or /help for commands.",
+                )
+                _welcome_color = _welcome_skin.get_color("banner_text", "#FFF8DC")
+            except Exception:
+                _welcome_text = welcome_text or "Welcome to Hermes Agent! Type your message or /help for commands."
+                _welcome_color = "#FFF8DC"
+
+            self.console.print(f"[{_welcome_color}]{_welcome_text}[/]")
+            printed_intro = True
+
+        if show_skills and self.preloaded_skills and not self._startup_skills_line_shown:
+            skills_label = ", ".join(self.preloaded_skills)
+            self.console.print(
+                f"[bold {_accent_hex()}]Activated skills:[/] {skills_label}"
+            )
+            self._startup_skills_line_shown = True
+            printed_intro = True
+
+        if trailing_blank_line and printed_intro:
+            self.console.print()
 
     def _try_attach_clipboard_image(self) -> bool:
         """Check clipboard for an image and attach it if found.
@@ -6126,6 +6239,8 @@ class HermesCLI:
         then prints a short status line so the user sees activity instead of
         a frozen screen while a large payload (e.g. 45 KB write_file) streams.
         """
+        if self._suppress_tool_progress_output():
+            return
         if getattr(self, "_stream_box_opened", False):
             self._flush_stream()
             self._stream_box_opened = False
@@ -6146,6 +6261,8 @@ class HermesCLI:
         is doing during tool execution (fills the gap between thinking
         spinner and next response).  Also plays audio cue in voice mode.
         """
+        if self._suppress_tool_progress_output():
+            return
         # Only act on tool.started; ignore tool.completed, reasoning.available, etc.
         if event_type != "tool.started":
             return
@@ -6352,7 +6469,9 @@ class HermesCLI:
 
             if result.get("success") and result.get("transcript", "").strip():
                 transcript = result["transcript"].strip()
-                self._attached_images.clear()
+                attached_images = getattr(self, "_attached_images", None)
+                if attached_images is not None:
+                    attached_images.clear()
                 if hasattr(self, '_app') and self._app:
                     self._app.invalidate()
                 self._pending_input.put(transcript)
@@ -6887,6 +7006,100 @@ class HermesCLI:
     def _secret_capture_callback(self, var_name: str, prompt: str, metadata=None) -> dict:
         return prompt_for_secret(self, var_name, prompt, metadata)
 
+    def _plain_clarify_callback(self, question, choices):
+        """Fallback clarify prompt for plain input() mode."""
+        print()
+        _cprint(f"{_BOLD}Clarify:{_RST} {question}")
+
+        if not choices:
+            try:
+                answer = input("Your answer (blank to let Hermes decide): ").strip()
+            except (EOFError, KeyboardInterrupt):
+                answer = ""
+            if answer:
+                return answer
+            return (
+                "The user did not provide a response in plain mode. "
+                "Use your best judgement to make the choice and proceed."
+            )
+
+        for idx, choice in enumerate(choices, start=1):
+            print(f"  {idx}. {choice}")
+
+        try:
+            response = input("Choose a number or type your answer: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            response = ""
+
+        if not response:
+            return (
+                "The user did not provide a response in plain mode. "
+                "Use your best judgement to make the choice and proceed."
+            )
+
+        if response.isdigit():
+            selected = int(response)
+            if 1 <= selected <= len(choices):
+                return choices[selected - 1]
+
+        return response
+
+    def _plain_sudo_password_callback(self) -> str:
+        """Fallback sudo password prompt for plain input() mode."""
+        try:
+            password = getpass.getpass("sudo password (hidden, Enter to skip): ")
+        except (EOFError, KeyboardInterrupt):
+            password = ""
+
+        if password:
+            _cprint(f"{_DIM}  ✓ Password received (cached for session){_RST}")
+        else:
+            _cprint(f"{_DIM}  ⏭ Skipped{_RST}")
+        return password
+
+    def _plain_approval_callback(self, command: str, description: str,
+                                 *, allow_permanent: bool = True) -> str:
+        """Fallback dangerous-command approval prompt for plain input() mode."""
+        choices = self._approval_choices(command, allow_permanent=allow_permanent)
+        labels = {
+            "once": "Allow once",
+            "session": "Allow for this session",
+            "always": "Add to permanent allowlist",
+            "deny": "Deny",
+            "view": "Show full command",
+        }
+
+        print()
+        _cprint(f"{_BOLD}Dangerous command:{_RST} {description}")
+        print(f"  {command if len(command) <= 160 else command[:157] + '...'}")
+
+        while True:
+            for idx, choice in enumerate(choices, start=1):
+                print(f"  {idx}. {labels.get(choice, choice)}")
+
+            try:
+                response = input("Approval choice: ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                response = ""
+
+            if not response:
+                return "deny"
+
+            if response.isdigit():
+                selected = int(response)
+                if 1 <= selected <= len(choices):
+                    response = choices[selected - 1]
+
+            if response == "view" and "view" in choices:
+                print()
+                print(command)
+                continue
+
+            if response in choices and response != "view":
+                return response
+
+            print("Please choose one of:", ", ".join(choices))
+
     def _capture_modal_input_snapshot(self) -> None:
         """Temporarily clear the input buffer and save the user's in-progress draft."""
         if self._modal_input_snapshot is not None or not getattr(self, "_app", None):
@@ -6951,9 +7164,18 @@ class HermesCLI:
         Returns:
             The agent's response, or None on error
         """
-        # Single-query and direct chat callers do not go through run(), so
-        # register secure secret capture here as well.
+        # Single-query and direct chat callers do not always go through run(),
+        # so register the interactive callbacks here as well.
+        set_sudo_password_callback(
+            self._plain_sudo_password_callback
+            if self.plain_repl else self._sudo_password_callback
+        )
+        set_approval_callback(
+            self._plain_approval_callback
+            if self.plain_repl else self._approval_callback
+        )
         set_secret_capture_callback(self._secret_capture_callback)
+        plain_raw_output = self._plain_session_uses_raw_output()
 
         # Refresh provider credentials if needed (handles key rotation transparently)
         if not self._ensure_runtime_credentials():
@@ -6964,7 +7186,7 @@ class HermesCLI:
             self.agent = None
 
         # Initialize agent if needed
-        if self.agent is None:
+        if self.agent is None and not plain_raw_output:
             _cprint(f"{_DIM}Initializing agent...{_RST}")
         if not self._init_agent(
             model_override=turn_route["model"],
@@ -7014,8 +7236,9 @@ class HermesCLI:
         # Add user message to history
         self.conversation_history.append({"role": "user", "content": message})
 
-        ChatConsole().print(f"[{_accent_hex()}]{'─' * 40}[/]")
-        print(flush=True)
+        if not plain_raw_output:
+            ChatConsole().print(f"[{_accent_hex()}]{'─' * 40}[/]")
+            print(flush=True)
         
         try:
             # Run the conversation with interrupt monitoring
@@ -7252,7 +7475,7 @@ class HermesCLI:
             # intermediate turn boundaries (tool-calling loops), which caused
             # the reasoning box to re-render after the final response.
             _reasoning_already_shown = getattr(self, '_reasoning_shown_this_turn', False)
-            if self.show_reasoning and result and not _reasoning_already_shown:
+            if self.show_reasoning and result and not _reasoning_already_shown and not plain_raw_output:
                 reasoning = result.get("last_reasoning")
                 if reasoning:
                     w = shutil.get_terminal_size().columns
@@ -7292,6 +7515,8 @@ class HermesCLI:
                     # Response was already streamed token-by-token with box framing;
                     # _flush_stream() already closed the box. Skip Rich Panel.
                     pass
+                elif plain_raw_output:
+                    print(response)
                 else:
                     _chat_console = ChatConsole()
                     _chat_console.print(Panel(
@@ -7366,6 +7591,9 @@ class HermesCLI:
     
     def _print_exit_summary(self):
         """Print session resume info on exit, similar to Claude Code."""
+        if self.plain_repl and not self._plain_session_is_interactive():
+            return
+
         print()
         msg_count = len(self.conversation_history)
         if msg_count > 0:
@@ -7406,6 +7634,103 @@ class HermesCLI:
             except Exception:
                 goodbye = "Goodbye! ⚕"
             print(goodbye)
+
+    def _finalize_interactive_session(self):
+        """Run shared cleanup for both the TUI and plain REPL."""
+        self._should_exit = True
+        if self.agent and self.conversation_history:
+            try:
+                self.agent.flush_memories(self.conversation_history)
+            except (Exception, KeyboardInterrupt):
+                pass
+        if hasattr(self, '_voice_recorder') and self._voice_recorder:
+            try:
+                self._voice_recorder.shutdown()
+            except Exception:
+                pass
+            self._voice_recorder = None
+        try:
+            from tools.voice_mode import cleanup_temp_recordings
+            cleanup_temp_recordings()
+        except Exception:
+            pass
+        set_sudo_password_callback(None)
+        set_approval_callback(None)
+        set_secret_capture_callback(None)
+        if hasattr(self, '_session_db') and self._session_db and self.agent:
+            try:
+                self._session_db.end_session(self.agent.session_id, "cli_close")
+            except (Exception, KeyboardInterrupt) as e:
+                logger.debug("Could not close session in DB: %s", e)
+        if self.agent and getattr(self, '_agent_running', False):
+            try:
+                from hermes_cli.plugins import invoke_hook as _invoke_hook
+                _invoke_hook(
+                    "on_session_end",
+                    session_id=self.agent.session_id,
+                    completed=False,
+                    interrupted=True,
+                    model=getattr(self.agent, 'model', None),
+                    platform=getattr(self.agent, 'platform', None) or "cli",
+                )
+            except Exception:
+                pass
+        _run_cleanup()
+        self._print_exit_summary()
+
+    def run_plain(self):
+        """Run a fallback REPL for weak PTY or no-CPR environments."""
+        plain_interactive = self._plain_session_is_interactive()
+        self._show_interactive_intro(
+            show_banner=False,
+            show_resume_history=plain_interactive,
+            show_welcome=plain_interactive,
+            show_skills=plain_interactive,
+            trailing_blank_line=plain_interactive,
+            welcome_text="Hermes Agent plain mode. Type your message or /help for commands.",
+        )
+        if plain_interactive:
+            _cprint(f"{_DIM}Plain chat mode active -- prompt_toolkit UI disabled.{_RST}")
+
+        self._agent_running = False
+        self._should_exit = False
+        self._last_ctrl_c_time = 0
+
+        from hermes_cli.plugins import get_plugin_manager
+        get_plugin_manager()._cli_ref = self
+
+        set_sudo_password_callback(self._plain_sudo_password_callback)
+        set_approval_callback(self._plain_approval_callback)
+        set_secret_capture_callback(self._secret_capture_callback)
+
+        normal_prompt, _ = self._get_tui_prompt_symbols()
+        prompt_text = normal_prompt if plain_interactive else ""
+
+        try:
+            while not self._should_exit:
+                try:
+                    user_input = input(prompt_text)
+                except EOFError:
+                    if plain_interactive:
+                        print()
+                    break
+                except KeyboardInterrupt:
+                    if plain_interactive:
+                        print()
+                    break
+
+                text = user_input.strip()
+                if not text:
+                    continue
+
+                if text.startswith("/"):
+                    if not self.process_command(text):
+                        break
+                    continue
+
+                self.chat(text)
+        finally:
+            self._finalize_interactive_session()
 
     def _get_tui_prompt_symbols(self) -> tuple[str, str]:
         """Return ``(normal_prompt, state_suffix)`` for the active skin.
@@ -7587,6 +7912,10 @@ class HermesCLI:
 
     def run(self):
         """Run the interactive CLI loop with persistent input at bottom."""
+        if self.plain_repl:
+            self.run_plain()
+            return
+
         # Push the entire TUI to the bottom of the terminal so the banner,
         # responses, and prompt all appear pinned to the bottom — empty
         # space stays above, not below.  This prints enough blank lines to
@@ -7598,33 +7927,7 @@ class HermesCLI:
         except Exception:
             pass
 
-        self.show_banner()
-
-        # One-line Honcho session indicator (TTY-only, not captured by agent).
-        # Only show when the user explicitly configured Honcho for Hermes
-        # (not auto-enabled from a stray HONCHO_API_KEY env var).
-        # If resuming a session, load history and display it immediately
-        # so the user has context before typing their first message.
-        if self._resumed:
-            if self._preload_resumed_session():
-                self._display_resumed_history()
-
-        try:
-            from hermes_cli.skin_engine import get_active_skin
-            _welcome_skin = get_active_skin()
-            _welcome_text = _welcome_skin.get_branding("welcome", "Welcome to Hermes Agent! Type your message or /help for commands.")
-            _welcome_color = _welcome_skin.get_color("banner_text", "#FFF8DC")
-        except Exception:
-            _welcome_text = "Welcome to Hermes Agent! Type your message or /help for commands."
-            _welcome_color = "#FFF8DC"
-        self.console.print(f"[{_welcome_color}]{_welcome_text}[/]")
-        if self.preloaded_skills and not self._startup_skills_line_shown:
-            skills_label = ", ".join(self.preloaded_skills)
-            self.console.print(
-                f"[bold {_accent_hex()}]Activated skills:[/] {skills_label}"
-            )
-            self._startup_skills_line_shown = True
-        self.console.print()
+        self._show_interactive_intro()
         
         # State for async operation
         self._agent_running = False
@@ -8984,55 +9287,7 @@ class HermesCLI:
         except (EOFError, KeyboardInterrupt, BrokenPipeError):
             pass
         finally:
-            self._should_exit = True
-            # Flush memories before exit (only for substantial conversations)
-            if self.agent and self.conversation_history:
-                try:
-                    self.agent.flush_memories(self.conversation_history)
-                except (Exception, KeyboardInterrupt):
-                    pass
-            # Shut down voice recorder (release persistent audio stream)
-            if hasattr(self, '_voice_recorder') and self._voice_recorder:
-                try:
-                    self._voice_recorder.shutdown()
-                except Exception:
-                    pass
-                self._voice_recorder = None
-            # Clean up old temp voice recordings
-            try:
-                from tools.voice_mode import cleanup_temp_recordings
-                cleanup_temp_recordings()
-            except Exception:
-                pass
-            # Unregister callbacks to avoid dangling references
-            set_sudo_password_callback(None)
-            set_approval_callback(None)
-            set_secret_capture_callback(None)
-            # Close session in SQLite
-            if hasattr(self, '_session_db') and self._session_db and self.agent:
-                try:
-                    self._session_db.end_session(self.agent.session_id, "cli_close")
-                except (Exception, KeyboardInterrupt) as e:
-                    logger.debug("Could not close session in DB: %s", e)
-            # Plugin hook: on_session_end — safety net for interrupted exits.
-            # run_conversation() already fires this per-turn on normal completion,
-            # so only fire here if the agent was mid-turn (_agent_running) when
-            # the exit occurred, meaning run_conversation's hook didn't fire.
-            if self.agent and getattr(self, '_agent_running', False):
-                try:
-                    from hermes_cli.plugins import invoke_hook as _invoke_hook
-                    _invoke_hook(
-                        "on_session_end",
-                        session_id=self.agent.session_id,
-                        completed=False,
-                        interrupted=True,
-                        model=getattr(self.agent, 'model', None),
-                        platform=getattr(self.agent, 'platform', None) or "cli",
-                    )
-                except Exception:
-                    pass
-            _run_cleanup()
-            self._print_exit_summary()
+            self._finalize_interactive_session()
 
 
 # ============================================================================
@@ -9061,6 +9316,7 @@ def main(
     w: bool = False,
     checkpoints: bool = False,
     pass_session_id: bool = False,
+    plain: bool = False,
 ):
     """
     Hermes Agent CLI - Interactive AI Assistant
@@ -9083,6 +9339,7 @@ def main(
         resume: Resume a previous session by its ID (e.g., 20260225_143052_a1b2c3)
         worktree: Run in an isolated git worktree (for parallel agents). Alias: -w
         w: Shorthand for --worktree
+        plain: Use a basic input() REPL instead of the prompt_toolkit TUI
     
     Examples:
         python cli.py                            # Start interactive mode
@@ -9170,6 +9427,7 @@ def main(
         resume=resume,
         checkpoints=checkpoints,
         pass_session_id=pass_session_id,
+        plain_repl=plain,
     )
 
     if parsed_skills:
@@ -9234,6 +9492,7 @@ def main(
                     runtime_override=turn_route["runtime"],
                     route_label=turn_route["label"],
                     request_overrides=turn_route.get("request_overrides"),
+                    suppress_cli_rendering=True,
                 ):
                     cli.agent.quiet_mode = True
                     cli.agent.suppress_status_output = True
@@ -9252,10 +9511,11 @@ def main(
             # Exit with error code if credentials or agent init fails
             sys.exit(1)
         else:
-            cli.show_banner()
-            _query_label = query or ("[image attached]" if single_query_images else "")
-            if _query_label:
-                cli.console.print(f"[bold blue]Query:[/] {_query_label}")
+            if not plain:
+                cli.show_banner()
+                _query_label = query or ("[image attached]" if single_query_images else "")
+                if _query_label:
+                    cli.console.print(f"[bold blue]Query:[/] {_query_label}")
             cli.chat(query, images=single_query_images or None)
             cli._print_exit_summary()
         return

@@ -43,7 +43,22 @@ LOCKOUT_SECONDS = 3600              # Lockout duration after too many failures
 MAX_PENDING_PER_PLATFORM = 3        # Max pending codes per platform
 MAX_FAILED_ATTEMPTS = 5             # Failed approvals before lockout
 
-PAIRING_DIR = get_hermes_dir("platforms/pairing", "pairing")
+def _resolve_pairing_dir(home: Path | None = None) -> Path:
+    """Resolve the pairing directory for the active Hermes home.
+
+    When ``home`` is provided we mirror :func:`get_hermes_dir` without reading
+    ``HERMES_HOME`` again so callers can pin the location explicitly.
+    """
+    if home is None:
+        return get_hermes_dir("platforms/pairing", "pairing")
+    legacy = home / "pairing"
+    if legacy.exists():
+        return legacy
+    return home / "platforms" / "pairing"
+
+
+_IMPORT_PAIRING_DIR = _resolve_pairing_dir()
+PAIRING_DIR = _IMPORT_PAIRING_DIR
 
 
 def _secure_write(path: Path, data: str) -> None:
@@ -82,20 +97,29 @@ class PairingStore:
       - _rate_limits.json         : rate limit tracking
     """
 
-    def __init__(self):
-        PAIRING_DIR.mkdir(parents=True, exist_ok=True)
+    def __init__(self, pairing_dir: Optional[Path] = None):
+        if pairing_dir is None:
+            # Respect explicit test monkeypatches of PAIRING_DIR, but otherwise
+            # resolve against the current HERMES_HOME at instantiation time.
+            pairing_dir = (
+                PAIRING_DIR
+                if PAIRING_DIR != _IMPORT_PAIRING_DIR
+                else _resolve_pairing_dir()
+            )
+        self._pairing_dir = Path(pairing_dir)
+        self._pairing_dir.mkdir(parents=True, exist_ok=True)
         # Protects all read-modify-write cycles. The gateway runs multiple
         # platform adapters concurrently in threads sharing one PairingStore.
         self._lock = threading.RLock()
 
     def _pending_path(self, platform: str) -> Path:
-        return PAIRING_DIR / f"{platform}-pending.json"
+        return self._pairing_dir / f"{platform}-pending.json"
 
     def _approved_path(self, platform: str) -> Path:
-        return PAIRING_DIR / f"{platform}-approved.json"
+        return self._pairing_dir / f"{platform}-approved.json"
 
     def _rate_limit_path(self) -> Path:
-        return PAIRING_DIR / "_rate_limits.json"
+        return self._pairing_dir / "_rate_limits.json"
 
     def _load_json(self, path: Path) -> dict:
         if path.exists():
@@ -301,7 +325,7 @@ class PairingStore:
     def _all_platforms(self, suffix: str) -> list:
         """List all platforms that have data files of a given suffix."""
         platforms = []
-        for f in PAIRING_DIR.iterdir():
+        for f in self._pairing_dir.iterdir():
             if f.name.endswith(f"-{suffix}.json"):
                 platform = f.name.replace(f"-{suffix}.json", "")
                 if not platform.startswith("_"):

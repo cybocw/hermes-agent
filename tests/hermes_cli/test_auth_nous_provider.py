@@ -1,13 +1,19 @@
 """Regression tests for Nous OAuth refresh + agent-key mint interactions."""
 
 import json
+import ssl
 from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
 import pytest
 
-from hermes_cli.auth import AuthError, get_provider_auth_state, resolve_nous_runtime_credentials
+from hermes_cli.auth import (
+    AuthError,
+    _resolve_verify,
+    get_provider_auth_state,
+    resolve_nous_runtime_credentials,
+)
 
 
 def _setup_nous_auth(
@@ -52,6 +58,20 @@ def _mint_payload(api_key: str = "agent-key") -> dict:
         "expires_in": 1800,
         "reused": False,
     }
+
+
+def _existing_ca_bundle() -> str:
+    paths = ssl.get_default_verify_paths()
+    for candidate in (paths.cafile, paths.openssl_cafile):
+        if candidate and Path(candidate).exists():
+            return candidate
+
+    try:
+        import certifi
+    except ImportError as exc:  # pragma: no cover - fallback for minimal envs
+        pytest.skip(f"No CA bundle available for SSLContext test: {exc}")
+
+    return certifi.where()
 
 
 def test_refresh_token_persisted_when_mint_returns_insufficient_credits(tmp_path, monkeypatch):
@@ -154,3 +174,8 @@ def test_mint_retry_uses_latest_rotated_refresh_token(tmp_path, monkeypatch):
     assert creds["api_key"] == "agent-key"
     assert refresh_calls == ["refresh-old", "refresh-1"]
 
+
+def test_resolve_verify_builds_ssl_context_for_ca_bundle():
+    verify = _resolve_verify(ca_bundle=_existing_ca_bundle())
+
+    assert isinstance(verify, ssl.SSLContext)

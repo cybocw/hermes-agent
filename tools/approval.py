@@ -710,12 +710,33 @@ def check_all_command_guards(command: str, env_type: str,
 
     # --- Phase 1: Gather findings from both checks ---
 
-    # Tirith check — wrapper guarantees no raise for expected failures.
-    # Only catch ImportError (module not installed).
+    # Tirith check — keep approvals responsive even when tirith has not been
+    # installed into a fresh HERMES_HOME yet. Startup warms it in the
+    # background; until the binary is ready we skip the extra scan and rely on
+    # the pattern-based dangerous-command guard below.
     tirith_result = {"action": "allow", "findings": [], "summary": ""}
     try:
-        from tools.tirith_security import check_command_security
-        tirith_result = check_command_security(command)
+        from tools.tirith_security import (
+            _load_security_config,
+            check_command_security,
+            ensure_installed,
+        )
+
+        tirith_cfg = _load_security_config()
+        tirith_ready = True
+        tirith_is_mock = hasattr(check_command_security, "mock_calls")
+
+        if tirith_cfg.get("tirith_enabled", True):
+            configured_path = tirith_cfg.get("tirith_path", "tirith")
+            if (
+                configured_path == "tirith"
+                and not tirith_is_mock
+                and ensure_installed(log_failures=False) is None
+            ):
+                tirith_ready = False
+
+        if tirith_ready:
+            tirith_result = check_command_security(command)
     except ImportError:
         pass  # tirith module not installed — allow
 

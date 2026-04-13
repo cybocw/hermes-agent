@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -26,12 +27,23 @@ from hermes_cli.auth import (
     resolve_external_process_provider_credentials,
     has_usable_secret,
 )
-from hermes_cli.config import load_config
+from hermes_cli.config import get_hermes_home, load_config
+from hermes_cli.env_loader import load_hermes_dotenv
 from hermes_constants import OPENROUTER_BASE_URL
+
+_PROJECT_ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 
 
 def _normalize_custom_provider_name(value: str) -> str:
     return value.strip().lower().replace(" ", "-")
+
+
+def _load_runtime_env() -> None:
+    """Load Hermes env files so config placeholders can resolve consistently."""
+    load_hermes_dotenv(
+        hermes_home=get_hermes_home(),
+        project_env=_PROJECT_ENV_PATH,
+    )
 
 
 def _detect_api_mode_for_url(base_url: str) -> Optional[str]:
@@ -586,6 +598,7 @@ def resolve_runtime_provider(
     explicit_base_url: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Resolve runtime provider credentials for agent execution."""
+    _load_runtime_env()
     requested_provider = resolve_requested_provider(requested)
 
     custom_runtime = _resolve_named_custom_runtime(

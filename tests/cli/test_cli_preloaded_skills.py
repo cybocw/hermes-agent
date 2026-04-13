@@ -106,13 +106,34 @@ def test_main_raises_for_unknown_preloaded_skill(monkeypatch):
         cli_mod.main(skills="missing-skill", list_tools=True)
 
 
+def test_main_passes_plain_flag_to_cli(monkeypatch):
+    import cli as cli_mod
+
+    created = {}
+
+    def fake_cli(**kwargs):
+        created["cli"] = _DummyCLI(**kwargs)
+        return created["cli"]
+
+    monkeypatch.setattr(cli_mod, "HermesCLI", fake_cli)
+
+    with pytest.raises(SystemExit):
+        cli_mod.main(list_tools=True, plain=True)
+
+    assert created["cli"].kwargs["plain_repl"] is True
+
+
 def test_show_banner_does_not_print_skills():
     """show_banner() no longer prints the activated skills line — it moved to run()."""
     cli_obj = _make_real_cli(compact=False)
     cli_obj.preloaded_skills = ["hermes-agent-dev", "github-auth"]
     cli_obj.console = MagicMock()
+    mock_banner = MagicMock()
 
-    with patch("cli.build_welcome_banner") as mock_banner, patch(
+    with patch.dict(
+        cli_obj.show_banner.__globals__,
+        {"build_welcome_banner": mock_banner},
+    ), patch(
         "shutil.get_terminal_size", return_value=os.terminal_size((120, 40))
     ):
         cli_obj.show_banner()

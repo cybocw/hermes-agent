@@ -644,6 +644,7 @@ def cmd_chat(args):
         "provider": getattr(args, "provider", None),
         "toolsets": args.toolsets,
         "skills": getattr(args, "skills", None),
+        "plain": getattr(args, "plain", False),
         "verbose": args.verbose,
         "quiet": getattr(args, "quiet", False),
         "query": args.query,
@@ -4286,6 +4287,12 @@ For more help on a command:
         default=False,
         help="Include the session ID in the agent's system prompt"
     )
+    parser.add_argument(
+        "--plain",
+        action="store_true",
+        default=False,
+        help="Use a basic input() REPL instead of the prompt_toolkit TUI"
+    )
     
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
     
@@ -4334,6 +4341,12 @@ For more help on a command:
         "-Q", "--quiet",
         action="store_true",
         help="Quiet mode for programmatic use: suppress banner, spinner, and tool previews. Only output the final response and session info."
+    )
+    chat_parser.add_argument(
+        "--plain",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Use a basic input() REPL instead of the prompt_toolkit TUI"
     )
     chat_parser.add_argument(
         "--resume", "-r",

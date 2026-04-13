@@ -770,8 +770,6 @@ def list_authenticated_providers(
     # --- 1. Check Hermes-mapped providers ---
     for hermes_id, mdev_id in PROVIDER_TO_MODELS_DEV.items():
         pdata = data.get(mdev_id)
-        if not isinstance(pdata, dict):
-            continue
 
         # Prefer auth.py PROVIDER_REGISTRY for env var names — it's our
         # source of truth.  models.dev can have wrong mappings (e.g.
@@ -780,6 +778,12 @@ def list_authenticated_providers(
         if pconfig and pconfig.api_key_env_vars:
             env_vars = list(pconfig.api_key_env_vars)
         else:
+            if not isinstance(pdata, dict):
+                # The live/stale models.dev snapshot can temporarily miss a
+                # mapped provider. Keep the provider visible when Hermes has
+                # first-party auth metadata for it instead of downgrading it
+                # to a later "hermes-only" overlay entry.
+                continue
             env_vars = pdata.get("env", [])
             if not isinstance(env_vars, list):
                 continue
@@ -795,8 +799,15 @@ def list_authenticated_providers(
         top = model_ids[:max_models]
 
         slug = hermes_id
-        pinfo = _mdev_pinfo(mdev_id)
-        display_name = pinfo.name if pinfo else mdev_id
+        pinfo = _mdev_pinfo(mdev_id) if isinstance(pdata, dict) else None
+        display_name = (
+            pinfo.name
+            if pinfo else (
+                pconfig.name
+                if pconfig and getattr(pconfig, "name", "")
+                else get_label(hermes_id)
+            )
+        )
 
         results.append({
             "slug": slug,
@@ -919,5 +930,3 @@ def list_authenticated_providers(
     results.sort(key=lambda r: (not r["is_current"], -r["total_models"]))
 
     return results
-
-

@@ -590,7 +590,10 @@ class TelegramAdapter(BasePlatformAdapter):
                 request = HTTPXRequest(**request_kwargs)
                 get_updates_request = HTTPXRequest(**request_kwargs)
 
-            builder = builder.request(request).get_updates_request(get_updates_request)
+            # Configure the builder step-by-step so simple test doubles do not
+            # need to emulate the full fluent builder chain.
+            builder.request(request)
+            builder.get_updates_request(get_updates_request)
             self._app = builder.build()
             self._bot = self._app.bot
             

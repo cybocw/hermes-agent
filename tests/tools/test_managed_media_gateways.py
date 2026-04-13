@@ -49,6 +49,21 @@ def _enable_managed_nous_tools(monkeypatch):
     monkeypatch.setenv("HERMES_ENABLE_NOUS_MANAGED_TOOLS", "1")
 
 
+@pytest.fixture(autouse=True)
+def _clean_managed_media_env(monkeypatch):
+    """Managed gateway tests must start without direct OpenAI/FAL credentials."""
+    for key in (
+        "FAL_KEY",
+        "FAL_QUEUE_GATEWAY_URL",
+        "OPENAI_API_KEY",
+        "OPENAI_BASE_URL",
+        "TOOL_GATEWAY_DOMAIN",
+        "TOOL_GATEWAY_USER_TOKEN",
+        "VOICE_TOOLS_OPENAI_KEY",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+
 def _install_fake_tools_package():
     tools_package = types.ModuleType("tools")
     tools_package.__path__ = [str(TOOLS_DIR)]  # type: ignore[attr-defined]

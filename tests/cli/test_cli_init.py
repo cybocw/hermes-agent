@@ -95,6 +95,17 @@ class TestVerboseAndToolProgress:
         assert isinstance(cli.tool_progress_mode, str)
         assert cli.tool_progress_mode in ("off", "new", "all", "verbose")
 
+    def test_tool_progress_off_suppresses_tool_generation_status(self):
+        cli = _make_cli(config_overrides={"display": {"tool_progress": "off"}})
+        cli._stream_box_opened = False
+        cli._close_reasoning_box = MagicMock()
+
+        with patch("cli._cprint") as mock_print:
+            cli._on_tool_gen_start("write_file")
+
+        mock_print.assert_not_called()
+        cli._close_reasoning_box.assert_not_called()
+
 
 class TestBusyInputMode:
     def test_default_busy_input_mode_is_interrupt(self):
@@ -158,6 +169,82 @@ class TestSingleQueryState:
         assert cli._voice_tts_done.is_set()
         assert hasattr(cli, "_interrupt_queue")
         assert hasattr(cli, "_pending_input")
+
+
+class TestParseableSingleQueryCallbacks:
+    def test_init_agent_can_disable_cli_render_callbacks_for_quiet_output(self):
+        cli = _make_cli(
+            config_overrides={
+                "display": {
+                    "compact": False,
+                    "tool_progress": "all",
+                    "streaming": True,
+                    "inline_diffs": True,
+                }
+            }
+        )
+
+        class _DummyAgent:
+            def __init__(self, *args, **kwargs):
+                self.kwargs = kwargs
+
+        with patch.dict(cli._init_agent.__globals__, {"AIAgent": _DummyAgent}):
+            with patch.object(cli, "_ensure_runtime_credentials", return_value=True):
+                assert cli._init_agent(suppress_cli_rendering=True) is True
+
+        kwargs = cli.agent.kwargs
+        assert kwargs["thinking_callback"] is None
+        assert kwargs["tool_progress_callback"] is None
+        assert kwargs["tool_start_callback"] is None
+        assert kwargs["tool_complete_callback"] is None
+        assert kwargs["stream_delta_callback"] is None
+        assert kwargs["tool_gen_callback"] is None
+
+
+class TestPlainRepl:
+    def test_plain_repl_flag_is_honored(self):
+        cli = _make_cli(plain_repl=True)
+        assert cli.plain_repl is True
+
+    def test_plain_repl_env_var_enables_fallback_mode(self):
+        cli = _make_cli(env_overrides={"HERMES_PLAIN_REPL": "1"})
+        assert cli.plain_repl is True
+
+    def test_show_interactive_intro_can_skip_banner_and_welcome(self):
+        cli = _make_cli(plain_repl=True)
+        cli.show_banner = MagicMock()
+        cli.console = MagicMock()
+        cli.preloaded_skills = ["fastmcp"]
+
+        cli._show_interactive_intro(
+            show_banner=False,
+            show_resume_history=False,
+            show_welcome=False,
+            show_skills=False,
+            trailing_blank_line=False,
+        )
+
+        cli.show_banner.assert_not_called()
+        cli.console.print.assert_not_called()
+
+    def test_print_exit_summary_is_suppressed_for_noninteractive_plain(self, capsys):
+        cli = _make_cli(plain_repl=True)
+        cli._plain_session_is_interactive = MagicMock(return_value=False)
+        cli.conversation_history = [{"role": "user", "content": "hello"}]
+        cli._print_exit_summary()
+
+        assert capsys.readouterr().out == ""
+
+    def test_plain_repl_suppresses_tool_generation_status(self):
+        cli = _make_cli(plain_repl=True)
+        cli._stream_box_opened = False
+        cli._close_reasoning_box = MagicMock()
+
+        with patch("cli._cprint") as mock_print:
+            cli._on_tool_gen_start("write_file")
+
+        mock_print.assert_not_called()
+        cli._close_reasoning_box.assert_not_called()
 
 
 class TestHistoryDisplay:

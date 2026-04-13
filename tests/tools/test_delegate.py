@@ -253,6 +253,68 @@ class TestDelegateTask(unittest.TestCase):
             self.assertEqual(kwargs["provider"], parent.provider)
             self.assertEqual(kwargs["api_mode"], parent.api_mode)
 
+    def test_child_inherits_suppress_status_output_for_parseable_quiet_mode(self):
+        parent = _make_mock_parent(depth=0)
+        parent.suppress_status_output = True
+        children = []
+
+        class _FakeChild:
+            def run_conversation(self, user_message):
+                return {
+                    "final_response": "done",
+                    "completed": True,
+                    "api_calls": 1,
+                }
+
+        def _build_fake_child(**kwargs):
+            child = _FakeChild()
+            children.append(child)
+            return child
+
+        with patch("run_agent.AIAgent", side_effect=_build_fake_child):
+            delegate_task(goal="Stay quiet", parent_agent=parent)
+
+        self.assertEqual(len(children), 1)
+        self.assertTrue(getattr(children[0], "suppress_status_output", False))
+
+    @patch("tools.delegate_tool._run_single_child")
+    def test_batch_mode_stays_silent_in_parseable_quiet_mode(self, mock_run):
+        parent = _make_mock_parent(depth=0)
+        parent.suppress_status_output = True
+        parent._delegate_spinner = None
+        mock_run.side_effect = [
+            {
+                "task_index": 0,
+                "status": "completed",
+                "summary": "A",
+                "api_calls": 1,
+                "duration_seconds": 1.2,
+            },
+            {
+                "task_index": 1,
+                "status": "completed",
+                "summary": "B",
+                "api_calls": 1,
+                "duration_seconds": 1.4,
+            },
+        ]
+
+        with patch("run_agent.AIAgent") as MockAgent, patch("builtins.print") as mock_print:
+            mock_child = MagicMock()
+            MockAgent.return_value = mock_child
+
+            delegate_task(
+                tasks=[{"goal": "Read file A"}, {"goal": "Read file B"}],
+                parent_agent=parent,
+            )
+
+        leaked = [
+            str(call.args[0])
+            for call in mock_print.call_args_list
+            if call.args and "[1/2]" in str(call.args[0]) or call.args and "[2/2]" in str(call.args[0])
+        ]
+        self.assertEqual(leaked, [])
+
     def test_child_inherits_parent_print_fn(self):
         parent = _make_mock_parent(depth=0)
         sink = MagicMock()

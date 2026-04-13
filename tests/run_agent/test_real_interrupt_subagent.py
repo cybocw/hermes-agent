@@ -41,10 +41,15 @@ class TestRealSubagentInterrupt(unittest.TestCase):
 
     def setUp(self):
         set_interrupt(False)
+        self._original_openai_api_key = os.environ.get("OPENAI_API_KEY")
         os.environ.setdefault("OPENAI_API_KEY", "test-key")
 
     def tearDown(self):
         set_interrupt(False)
+        if self._original_openai_api_key is None:
+            os.environ.pop("OPENAI_API_KEY", None)
+        else:
+            os.environ["OPENAI_API_KEY"] = self._original_openai_api_key
 
     def test_interrupt_child_during_api_call(self):
         """Real AIAgent child interrupted while making API call."""

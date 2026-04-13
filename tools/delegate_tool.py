@@ -315,6 +315,9 @@ def _build_child_agent(
         iteration_budget=None,  # fresh budget per subagent
     )
     child._print_fn = getattr(parent_agent, '_print_fn', None)
+    child.suppress_status_output = bool(
+        getattr(parent_agent, "suppress_status_output", False)
+    )
     # Set delegation depth so children can't spawn grandchildren
     child._delegate_depth = getattr(parent_agent, '_delegate_depth', 0) + 1
 
@@ -615,6 +618,9 @@ def delegate_task(
         # Batch -- run in parallel with per-task progress lines
         completed_count = 0
         spinner_ref = getattr(parent_agent, '_delegate_spinner', None)
+        suppress_batch_progress = bool(
+            getattr(parent_agent, "suppress_status_output", False)
+        )
 
         with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_CHILDREN) as executor:
             futures = {}
@@ -652,16 +658,17 @@ def delegate_task(
                 icon = "✓" if status == "completed" else "✗"
                 remaining = n_tasks - completed_count
                 completion_line = f"{icon} [{idx+1}/{n_tasks}] {label}  ({dur}s)"
-                if spinner_ref:
-                    try:
-                        spinner_ref.print_above(completion_line)
-                    except Exception:
+                if not suppress_batch_progress:
+                    if spinner_ref:
+                        try:
+                            spinner_ref.print_above(completion_line)
+                        except Exception:
+                            print(f"  {completion_line}")
+                    else:
                         print(f"  {completion_line}")
-                else:
-                    print(f"  {completion_line}")
 
                 # Update spinner text to show remaining count
-                if spinner_ref and remaining > 0:
+                if not suppress_batch_progress and spinner_ref and remaining > 0:
                     try:
                         spinner_ref.update_text(f"🔀 {remaining} task{'s' if remaining != 1 else ''} remaining")
                     except Exception as e:

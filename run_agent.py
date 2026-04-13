@@ -1501,6 +1501,8 @@ class AIAgent:
         - output is explicitly rerouted via ``_print_fn``; or
         - stdout is a real TTY.
         """
+        if getattr(self, "suppress_status_output", False):
+            return False
         if self._print_fn is not None:
             return True
         stream = getattr(sys, "stdout", None)
@@ -1520,6 +1522,8 @@ class AIAgent:
         previews into flows that are expected to stay silent, such as
         ``hermes chat -q``.
         """
+        if getattr(self, "suppress_status_output", False):
+            return False
         return self.quiet_mode and not self.tool_progress_callback
 
     def _emit_status(self, message: str) -> None:
@@ -5495,6 +5499,7 @@ class AIAgent:
 
     def _build_api_kwargs(self, api_messages: list) -> dict:
         """Build the keyword arguments dict for the active API mode."""
+        request_overrides = getattr(self, "request_overrides", None) or {}
         if self.api_mode == "anthropic_messages":
             from agent.anthropic_adapter import build_anthropic_kwargs
             anthropic_messages = self._prepare_anthropic_messages_for_api(api_messages)
@@ -5519,7 +5524,7 @@ class AIAgent:
                 preserve_dots=self._anthropic_preserve_dots(),
                 context_length=ctx_len,
                 base_url=getattr(self, "_anthropic_base_url", None),
-                fast_mode=self.request_overrides.get("speed") == "fast",
+                fast_mode=request_overrides.get("speed") == "fast",
             )
 
         if self.api_mode == "codex_responses":
@@ -5576,8 +5581,8 @@ class AIAgent:
             elif not is_github_responses:
                 kwargs["include"] = []
 
-            if self.request_overrides:
-                kwargs.update(self.request_overrides)
+            if request_overrides:
+                kwargs.update(request_overrides)
 
             if self.max_tokens is not None and not is_codex_backend:
                 kwargs["max_output_tokens"] = self.max_tokens
@@ -5752,8 +5757,8 @@ class AIAgent:
 
         # Priority Processing / generic request overrides (e.g. service_tier).
         # Applied last so overrides win over any defaults set above.
-        if self.request_overrides:
-            api_kwargs.update(self.request_overrides)
+        if request_overrides:
+            api_kwargs.update(request_overrides)
 
         return api_kwargs
 
@@ -7623,6 +7628,7 @@ class AIAgent:
 
             finish_reason = "stop"
             response = None  # Guard against UnboundLocalError if all retries fail
+            api_kwargs = None
 
             while retry_count < max_retries:
                 try:
@@ -9711,9 +9717,10 @@ def main(
 
     Args:
         query (str): Natural language query for the agent. Defaults to Python 3.13 example.
-        model (str): Model name to use (OpenRouter format: provider/model). Defaults to anthropic/claude-sonnet-4.6.
-        api_key (str): API key for authentication. Uses OPENROUTER_API_KEY env var if not provided.
-        base_url (str): Base URL for the model API. Defaults to https://openrouter.ai/api/v1
+        model (str): Model name to use. Defaults to the configured main model, or
+            anthropic/claude-sonnet-4.6 if no model is configured.
+        api_key (str): API key override for the runtime provider.
+        base_url (str): Base URL override for the runtime provider.
         max_turns (int): Maximum number of API call iterations. Defaults to 10.
         enabled_toolsets (str): Comma-separated list of toolsets to enable. Supports predefined
                               toolsets (e.g., "research", "development", "safe").
@@ -9830,19 +9837,71 @@ def main(
         print("💾 Trajectory saving: ENABLED")
         print("   - Successful conversations → trajectory_samples.jsonl")
         print("   - Failed conversations → failed_trajectories.jsonl")
-    
-    # Initialize agent with provided parameters
+
+    # Resolve runtime routing before constructing the agent so direct runs
+    # use the same provider/api_mode chain as `hermes chat`.
+    from agent.auxiliary_client import _read_main_model
+    from hermes_cli.runtime_provider import (
+        format_runtime_provider_error,
+        resolve_runtime_provider,
+    )
+
+    effective_model = model or _read_main_model() or "anthropic/claude-sonnet-4.6"
+
     try:
+        runtime = resolve_runtime_provider(
+            requested=None,
+            explicit_api_key=api_key,
+            explicit_base_url=base_url,
+        )
+    except Exception as e:
+        print(f"❌ Failed to initialize agent: {format_runtime_provider_error(e)}")
+        return
+
+    try:
+        resolved_api_key = runtime.get("api_key")
+        resolved_base_url = runtime.get("base_url")
+        resolved_provider = runtime.get("provider", "openrouter")
+        resolved_api_mode = runtime.get("api_mode", "chat_completions")
+        resolved_acp_command = runtime.get("command")
+        resolved_acp_args = list(runtime.get("args") or [])
+        resolved_credential_pool = runtime.get("credential_pool")
+
+        if not isinstance(resolved_api_key, str) or not resolved_api_key:
+            has_custom_base = (
+                isinstance(resolved_base_url, str)
+                and resolved_base_url
+                and "openrouter.ai" not in resolved_base_url
+            )
+            if has_custom_base:
+                resolved_api_key = "no-key-required"
+            else:
+                raise RuntimeError(
+                    "Provider resolver returned an empty API key. "
+                    "Set OPENROUTER_API_KEY or run: hermes setup"
+                )
+
+        if not isinstance(resolved_base_url, str) or not resolved_base_url:
+            raise RuntimeError(
+                "Provider resolver returned an empty base URL. "
+                "Check your provider config or run: hermes setup"
+            )
+
         agent = AIAgent(
-            base_url=base_url,
-            model=model,
-            api_key=api_key,
+            base_url=resolved_base_url,
+            model=effective_model,
+            api_key=resolved_api_key,
+            provider=resolved_provider,
+            api_mode=resolved_api_mode,
+            acp_command=resolved_acp_command,
+            acp_args=resolved_acp_args,
             max_iterations=max_turns,
             enabled_toolsets=enabled_toolsets_list,
             disabled_toolsets=disabled_toolsets_list,
             save_trajectories=save_trajectories,
             verbose_logging=verbose,
-            log_prefix_chars=log_prefix_chars
+            log_prefix_chars=log_prefix_chars,
+            credential_pool=resolved_credential_pool,
         )
     except RuntimeError as e:
         print(f"❌ Failed to initialize agent: {e}")
@@ -9890,7 +9949,7 @@ def main(
         entry = {
             "conversations": trajectory,
             "timestamp": datetime.now().isoformat(),
-            "model": model,
+            "model": effective_model,
             "completed": result['completed'],
             "query": user_query
         }
@@ -9906,5 +9965,10 @@ def main(
     print("\n👋 Agent execution completed!")
 
 
-if __name__ == "__main__":
+def cli_main():
+    """CLI entry point used by the installed hermes-agent console script."""
     fire.Fire(main)
+
+
+if __name__ == "__main__":
+    cli_main()

@@ -3,7 +3,27 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 from hermes_cli.env_loader import load_hermes_dotenv
+
+
+@pytest.fixture(autouse=True)
+def _restore_env_vars(monkeypatch):
+    """Keep dotenv loader tests from leaking process env into later tests."""
+    tracked_keys = (
+        "OPENAI_API_KEY",
+        "OPENAI_BASE_URL",
+        "HERMES_HOME",
+        "HERMES_INFERENCE_PROVIDER",
+    )
+    original = {key: os.environ.get(key) for key in tracked_keys}
+    yield
+    for key, value in original.items():
+        if value is None:
+            monkeypatch.delenv(key, raising=False)
+        else:
+            monkeypatch.setenv(key, value)
 
 
 def test_user_env_overrides_stale_shell_values(tmp_path, monkeypatch):

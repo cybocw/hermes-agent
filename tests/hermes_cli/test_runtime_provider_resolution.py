@@ -1,3 +1,5 @@
+import os
+
 from hermes_cli import runtime_provider as rp
 
 
@@ -597,6 +599,62 @@ def test_named_custom_provider_falls_back_to_openai_api_key(monkeypatch):
     assert resolved["base_url"] == "http://localhost:1234/v1"
     assert resolved["api_key"] == "env-openai-key"
     assert resolved["requested_provider"] == "custom:local-llm"
+
+
+def test_named_custom_provider_loads_dotenv_before_resolving_placeholders(monkeypatch):
+    monkeypatch.delenv("NEO_API_KEY", raising=False)
+    monkeypatch.setattr(rp, "_try_resolve_from_custom_pool", lambda *a, **k: None)
+
+    dotenv_calls = []
+
+    def _fake_load_dotenv(**kwargs):
+        dotenv_calls.append(kwargs)
+        monkeypatch.setenv("NEO_API_KEY", "neo-from-dotenv")
+        return []
+
+    def _fake_load_config():
+        return {
+            "custom_providers": [
+                {
+                    "name": "neo",
+                    "base_url": "https://crs.us.bestony.com/openai",
+                    "api_key": os.getenv("NEO_API_KEY") or "${NEO_API_KEY}",
+                    "api_mode": "codex_responses",
+                }
+            ]
+        }
+
+    monkeypatch.setattr(rp, "load_hermes_dotenv", _fake_load_dotenv, raising=False)
+    monkeypatch.setattr(rp, "load_config", _fake_load_config)
+
+    resolved = rp.resolve_runtime_provider(requested="custom:neo")
+
+    assert resolved["api_key"] == "neo-from-dotenv"
+    assert dotenv_calls
+
+
+def test_named_custom_provider_ignores_unresolved_api_key_placeholders(monkeypatch):
+    monkeypatch.delenv("MISSING_CUSTOM_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "env-openai-key")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.setattr(rp, "_try_resolve_from_custom_pool", lambda *a, **k: None)
+    monkeypatch.setattr(
+        rp,
+        "load_config",
+        lambda: {
+            "custom_providers": [
+                {
+                    "name": "my-server",
+                    "base_url": "http://localhost:1234/v1",
+                    "api_key": "${MISSING_CUSTOM_KEY}",
+                }
+            ]
+        },
+    )
+
+    resolved = rp.resolve_runtime_provider(requested="custom:my-server")
+
+    assert resolved["api_key"] == "env-openai-key"
 
 
 def test_named_custom_provider_does_not_shadow_builtin_provider(monkeypatch):

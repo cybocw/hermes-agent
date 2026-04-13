@@ -20,6 +20,7 @@ import logging
 import os
 import shutil
 import shlex
+import ssl
 import stat
 import base64
 import hashlib
@@ -323,6 +324,15 @@ _PLACEHOLDER_SECRET_VALUES = {
 }
 
 
+def _looks_like_env_placeholder(value: str) -> bool:
+    cleaned = value.strip()
+    if cleaned.startswith("${") and cleaned.endswith("}"):
+        return True
+    if cleaned.startswith("$") and len(cleaned) > 1 and cleaned[1:].replace("_", "").isalnum():
+        return True
+    return False
+
+
 def has_usable_secret(value: Any, *, min_length: int = 4) -> bool:
     """Return True when a configured secret looks usable, not empty/placeholder."""
     if not isinstance(value, str):
@@ -331,6 +341,8 @@ def has_usable_secret(value: Any, *, min_length: int = 4) -> bool:
     if len(cleaned) < min_length:
         return False
     if cleaned.lower() in _PLACEHOLDER_SECRET_VALUES:
+        return False
+    if _looks_like_env_placeholder(cleaned):
         return False
     return True
 
@@ -1495,7 +1507,7 @@ def _resolve_verify(
     insecure: Optional[bool] = None,
     ca_bundle: Optional[str] = None,
     auth_state: Optional[Dict[str, Any]] = None,
-) -> bool | str:
+) -> bool | ssl.SSLContext:
     tls_state = auth_state.get("tls") if isinstance(auth_state, dict) else {}
     tls_state = tls_state if isinstance(tls_state, dict) else {}
 
@@ -1513,7 +1525,7 @@ def _resolve_verify(
     if effective_insecure:
         return False
     if effective_ca:
-        return str(effective_ca)
+        return ssl.create_default_context(cafile=str(effective_ca))
     return True
 
 
@@ -1674,7 +1686,7 @@ def fetch_nous_models(
     inference_base_url: str,
     api_key: str,
     timeout_seconds: float = 15.0,
-    verify: bool | str = True,
+    verify: bool | ssl.SSLContext = True,
 ) -> List[str]:
     """Fetch available model IDs from the Nous inference API."""
     timeout = httpx.Timeout(timeout_seconds)
@@ -1759,6 +1771,17 @@ def resolve_nous_access_token(
             or DEFAULT_NOUS_PORTAL_URL
         ).rstrip("/")
         client_id = str(state.get("client_id") or DEFAULT_NOUS_CLIENT_ID)
+        tls_state = state.get("tls") if isinstance(state.get("tls"), dict) else {}
+        effective_insecure = (
+            bool(insecure) if insecure is not None
+            else bool(tls_state.get("insecure", False))
+        )
+        effective_ca_bundle = (
+            ca_bundle
+            or tls_state.get("ca_bundle")
+            or os.getenv("HERMES_CA_BUNDLE")
+            or os.getenv("SSL_CERT_FILE")
+        )
         verify = _resolve_verify(insecure=insecure, ca_bundle=ca_bundle, auth_state=state)
 
         access_token = state.get("access_token")
@@ -1808,8 +1831,10 @@ def resolve_nous_access_token(
         state["portal_base_url"] = portal_base_url
         state["client_id"] = client_id
         state["tls"] = {
-            "insecure": verify is False,
-            "ca_bundle": verify if isinstance(verify, str) else None,
+            "insecure": effective_insecure,
+            "ca_bundle": None if effective_insecure else (
+                str(effective_ca_bundle) if effective_ca_bundle else None
+            ),
         }
         _save_provider_state(auth_store, "nous", state)
         _save_auth_store(auth_store)
@@ -1994,6 +2019,17 @@ def resolve_nous_runtime_credentials(
                 access_token_fp=_token_fingerprint(state.get("access_token")),
             )
 
+        tls = state.get("tls") if isinstance(state.get("tls"), dict) else {}
+        effective_insecure = (
+            bool(insecure) if insecure is not None
+            else bool(tls.get("insecure", False))
+        )
+        effective_ca_bundle = (
+            ca_bundle
+            or tls.get("ca_bundle")
+            or os.getenv("HERMES_CA_BUNDLE")
+            or os.getenv("SSL_CERT_FILE")
+        )
         verify = _resolve_verify(insecure=insecure, ca_bundle=ca_bundle, auth_state=state)
         timeout = httpx.Timeout(timeout_seconds if timeout_seconds else 15.0)
         _oauth_trace(
@@ -2151,8 +2187,10 @@ def resolve_nous_runtime_credentials(
             state["inference_base_url"] = inference_base_url
             state["client_id"] = client_id
             state["tls"] = {
-                "insecure": verify is False,
-                "ca_bundle": verify if isinstance(verify, str) else None,
+                "insecure": effective_insecure,
+                "ca_bundle": None if effective_insecure else (
+                    str(effective_ca_bundle) if effective_ca_bundle else None
+                ),
             }
 
         _persist_state("resolve_nous_runtime_credentials_final")
@@ -2930,17 +2968,19 @@ def _nous_device_code_login(
     client_id = client_id or pconfig.client_id
     scope = scope or pconfig.scope
     timeout = httpx.Timeout(timeout_seconds)
-    verify: bool | str = False if insecure else (ca_bundle if ca_bundle else True)
+    effective_insecure = bool(insecure)
+    effective_ca_bundle = str(ca_bundle) if ca_bundle else None
+    verify = _resolve_verify(insecure=insecure, ca_bundle=ca_bundle)
 
     if _is_remote_session():
         open_browser = False
 
     print(f"Starting Hermes login via {pconfig.name}...")
     print(f"Portal: {portal_base_url}")
-    if insecure:
+    if effective_insecure:
         print("TLS verification: disabled (--insecure)")
-    elif ca_bundle:
-        print(f"TLS verification: custom CA bundle ({ca_bundle})")
+    elif effective_ca_bundle:
+        print(f"TLS verification: custom CA bundle ({effective_ca_bundle})")
 
     with httpx.Client(timeout=timeout, headers={"Accept": "application/json"}, verify=verify) as client:
         device_data = _request_device_code(
@@ -3001,8 +3041,8 @@ def _nous_device_code_login(
         "expires_at": datetime.fromtimestamp(expires_at, tz=timezone.utc).isoformat(),
         "expires_in": token_expires_in,
         "tls": {
-            "insecure": verify is False,
-            "ca_bundle": verify if isinstance(verify, str) else None,
+            "insecure": effective_insecure,
+            "ca_bundle": None if effective_insecure else effective_ca_bundle,
         },
         "agent_key": None,
         "agent_key_id": None,

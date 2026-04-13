@@ -66,13 +66,26 @@ from gateway.platforms.slack import SlackAdapter  # noqa: E402
 # Fixtures
 # ---------------------------------------------------------------------------
 
+def _make_mock_slack_client():
+    """Return a Slack client double with async API methods defined explicitly."""
+    client = MagicMock()
+    client.users_info = AsyncMock(return_value={"user": {"profile": {}}})
+    client.reactions_add = AsyncMock()
+    client.reactions_remove = AsyncMock()
+    client.chat_postMessage = AsyncMock(return_value={"ts": "ts1"})
+    client.chat_update = AsyncMock(return_value={"ok": True})
+    client.files_upload_v2 = AsyncMock(return_value={"ok": True})
+    client.assistant_threads_setStatus = AsyncMock()
+    client.conversations_info = AsyncMock(return_value={"channel": {}})
+    return client
+
 @pytest.fixture()
 def adapter():
     config = PlatformConfig(enabled=True, token="xoxb-fake-token")
     a = SlackAdapter(config)
     # Mock the Slack app client
     a._app = MagicMock()
-    a._app.client = AsyncMock()
+    a._app.client = _make_mock_slack_client()
     a._bot_user_id = "U_BOT"
     a._running = True
     # Capture events instead of processing them
@@ -1056,7 +1069,7 @@ class TestThreadReplyHandling:
         config = PlatformConfig(enabled=True, token="***")
         a = SlackAdapter(config)
         a._app = MagicMock()
-        a._app.client = AsyncMock()
+        a._app.client = _make_mock_slack_client()
         a._bot_user_id = "U_BOT"
         a._team_bot_user_ids = {"T_TEAM": "U_BOT"}
         a._running = True
@@ -1196,7 +1209,7 @@ class TestAssistantThreadLifecycle:
         config = PlatformConfig(enabled=True, token="***")
         a = SlackAdapter(config)
         a._app = MagicMock()
-        a._app.client = AsyncMock()
+        a._app.client = _make_mock_slack_client()
         a._bot_user_id = "U_BOT"
         a._team_bot_user_ids = {"T_TEAM": "U_BOT"}
         a._running = True
