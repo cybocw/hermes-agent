@@ -16,6 +16,8 @@ Date: 2026-04-12
 
 如果你还想理解项目内部结构，可以继续阅读：
 
+- `docs/diagrams/hermes-project-architecture.svg`
+- `docs/diagrams/hermes-request-tool-sequence.svg`
 - `docs/project-architecture.md`
 - `docs/contributor-reading-guide.md`
 - `docs/architecture-comparison-hermes-codex-openclaw-claude-code.md`
@@ -35,6 +37,33 @@ Date: 2026-04-12
 - 10 分钟快速上手：第 3、4、5、6、24 章
 - 日常 CLI 使用：第 5、6、9、10、11、22 章
 - 进阶自动化与扩展：第 12、13、15、16、17、19 章
+
+### 1.3 按任务找章节
+
+如果你是带着具体问题来的，先看这张“任务 -> 章节”索引会更快：
+
+| 你现在要做什么 | 先看哪里 |
+| --- | --- |
+| 第一次安装、验证命令是否可用 | 第 3 章、第 24 章 |
+| 想知道主命令、CLI 入口和最常用交互方式 | 第 5 章、第 6 章 |
+| 想切模型、换 provider、配置 API key | 第 8 章、第 22 章 |
+| 想打开/关闭工具、理解 toolset 和审批行为 | 第 9 章 |
+| 想找会话历史、日志文件、排查运行异常 | 第 4 章、第 11 章、第 22 章 |
+| 想安装和管理 skills | 第 12 章 |
+| 想接插件、外部扩展或记忆 provider | 第 13 章、第 14 章 |
+| 想把 Hermes 接到 Telegram / Slack / Discord 等平台 | 第 15 章 |
+| 想配置定时任务 | 第 16 章 |
+| 想接 MCP 工具生态 | 第 17 章 |
+| 想接编辑器、ACP Server | 第 18 章 |
+| 想做多实例隔离、不同身份/环境切换 | 第 19 章 |
+| 想快速照着一套最小路径走通 | 第 24 章 |
+| 想复现实测命令和 smoke 结果 | 第 26 章 |
+
+如果你是从“先看图再看正文”进入这个手册，推荐顺序是：
+
+1. `docs/diagrams/hermes-project-architecture.svg`
+2. `docs/diagrams/hermes-request-tool-sequence.svg`
+3. 回到本文第 3、5、9、11、15、17、19、24 章按需展开
 
 ---
 

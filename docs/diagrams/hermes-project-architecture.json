@@ -1,0 +1,533 @@
+{
+  "template_type": "architecture",
+  "style": 1,
+  "width": 1280,
+  "height": 880,
+  "style_overrides": {
+    "title_align": "center"
+  },
+  "title": "Hermes Agent Project Architecture",
+  "subtitle": "Entrypoints, interface shells, agent runtime, tooling, and state backends",
+  "containers": [
+    {
+      "x": 64,
+      "y": 122,
+      "width": 1152,
+      "height": 94,
+      "label": "",
+      "side_label": "Entrypoints",
+      "side_label_x": 32,
+      "side_label_anchor": "start",
+      "subtitle": ""
+    },
+    {
+      "x": 64,
+      "y": 246,
+      "width": 1152,
+      "height": 104,
+      "label": "",
+      "side_label": "Interface Shells",
+      "side_label_x": 32,
+      "side_label_anchor": "start",
+      "subtitle": ""
+    },
+    {
+      "x": 64,
+      "y": 382,
+      "width": 1152,
+      "height": 122,
+      "label": "",
+      "side_label": "Runtime Core",
+      "side_label_x": 32,
+      "side_label_anchor": "start",
+      "subtitle": ""
+    },
+    {
+      "x": 64,
+      "y": 536,
+      "width": 1152,
+      "height": 146,
+      "label": "",
+      "side_label": "Prompt + Tooling",
+      "side_label_x": 32,
+      "side_label_anchor": "start",
+      "subtitle": ""
+    },
+    {
+      "x": 64,
+      "y": 714,
+      "width": 1152,
+      "height": 106,
+      "label": "",
+      "side_label": "State + Backends",
+      "side_label_x": 32,
+      "side_label_anchor": "start",
+      "subtitle": ""
+    }
+  ],
+  "nodes": [
+    {
+      "id": "main",
+      "kind": "rect",
+      "x": 126,
+      "y": 146,
+      "width": 210,
+      "height": 50,
+      "label": "hermes_cli/main.py",
+      "type_label": "ENTRY",
+      "fill": "#eff6ff",
+      "stroke": "#93c5fd",
+      "flat": true
+    },
+    {
+      "id": "run_agent",
+      "kind": "rect",
+      "x": 536,
+      "y": 146,
+      "width": 200,
+      "height": 50,
+      "label": "run_agent.py",
+      "type_label": "ENTRY",
+      "fill": "#eff6ff",
+      "stroke": "#93c5fd",
+      "flat": true
+    },
+    {
+      "id": "acp_entry",
+      "kind": "rect",
+      "x": 916,
+      "y": 146,
+      "width": 220,
+      "height": 50,
+      "label": "acp_adapter/entry.py",
+      "type_label": "ENTRY",
+      "fill": "#eff6ff",
+      "stroke": "#93c5fd",
+      "flat": true
+    },
+    {
+      "id": "cli",
+      "kind": "rect",
+      "x": 116,
+      "y": 272,
+      "width": 210,
+      "height": 56,
+      "label": "cli.py",
+      "type_label": "SHELL",
+      "fill": "#f8fafc",
+      "stroke": "#cbd5e1",
+      "flat": true
+    },
+    {
+      "id": "gateway",
+      "kind": "rect",
+      "x": 460,
+      "y": 272,
+      "width": 270,
+      "height": 56,
+      "label": "gateway/run.py",
+      "type_label": "SHELL",
+      "fill": "#f8fafc",
+      "stroke": "#cbd5e1",
+      "flat": true
+    },
+    {
+      "id": "acp_server",
+      "kind": "rect",
+      "x": 890,
+      "y": 272,
+      "width": 250,
+      "height": 56,
+      "label": "acp_adapter/server.py",
+      "type_label": "SHELL",
+      "fill": "#f8fafc",
+      "stroke": "#cbd5e1",
+      "flat": true
+    },
+    {
+      "id": "aiagent",
+      "kind": "double_rect",
+      "x": 430,
+      "y": 414,
+      "width": 420,
+      "height": 74,
+      "label": "AIAgent",
+      "type_label": "CORE",
+      "fill": "#faf5ff",
+      "stroke": "#c4b5fd",
+      "sublabel": "run_conversation loop"
+    },
+    {
+      "id": "prompt",
+      "kind": "rect",
+      "x": 86,
+      "y": 566,
+      "width": 200,
+      "height": 74,
+      "label": "Prompt + memory",
+      "type_label": "PROMPT",
+      "fill": "#fefce8",
+      "stroke": "#fde68a",
+      "flat": true,
+      "sublabel": "prompt_builder / memory_manager"
+    },
+    {
+      "id": "compressor",
+      "kind": "rect",
+      "x": 314,
+      "y": 566,
+      "width": 182,
+      "height": 74,
+      "label": "Compression",
+      "type_label": "CONTEXT",
+      "fill": "#fefce8",
+      "stroke": "#fde68a",
+      "flat": true,
+      "sublabel": "context_compressor"
+    },
+    {
+      "id": "model_tools",
+      "kind": "rect",
+      "x": 524,
+      "y": 566,
+      "width": 186,
+      "height": 74,
+      "label": "Tool routing",
+      "type_label": "ROUTER",
+      "fill": "#ecfeff",
+      "stroke": "#99f6e4",
+      "flat": true,
+      "sublabel": "model_tools / toolsets"
+    },
+    {
+      "id": "registry",
+      "kind": "double_rect",
+      "x": 738,
+      "y": 566,
+      "width": 186,
+      "height": 74,
+      "label": "Tool registry",
+      "type_label": "TOOLS",
+      "fill": "#ecfdf5",
+      "stroke": "#86efac",
+      "sublabel": "tools/registry / tools/*"
+    },
+    {
+      "id": "extensions",
+      "kind": "rect",
+      "x": 952,
+      "y": 556,
+      "width": 222,
+      "height": 92,
+      "label": "Extensions",
+      "type_label": "EXTENSION",
+      "fill": "#fff7ed",
+      "stroke": "#fdba74",
+      "flat": true,
+      "sublabel": "MCP / plugins / skills"
+    },
+    {
+      "id": "sessiondb",
+      "kind": "cylinder",
+      "x": 98,
+      "y": 734,
+      "width": 210,
+      "height": 72,
+      "label": "SessionDB",
+      "sublabel": "SQLite + FTS5 + lineage",
+      "fill": "#eef2ff",
+      "stroke": "#a5b4fc"
+    },
+    {
+      "id": "gw_session",
+      "kind": "rect",
+      "x": 356,
+      "y": 742,
+      "width": 220,
+      "height": 56,
+      "label": "Gateway session",
+      "type_label": "STATE",
+      "fill": "#eef2ff",
+      "stroke": "#a5b4fc",
+      "flat": true,
+      "sublabel": "gateway/session.py"
+    },
+    {
+      "id": "providers",
+      "kind": "rect",
+      "x": 644,
+      "y": 742,
+      "width": 250,
+      "height": 56,
+      "label": "Providers",
+      "type_label": "MODEL",
+      "fill": "#eef2ff",
+      "stroke": "#a5b4fc",
+      "flat": true,
+      "sublabel": "clients + auth"
+    },
+    {
+      "id": "backends",
+      "kind": "rect",
+      "x": 962,
+      "y": 734,
+      "width": 214,
+      "height": 72,
+      "label": "Tool backends",
+      "sublabel": "terminal / web / browser / file",
+      "type_label": "EXECUTION",
+      "fill": "#eef2ff",
+      "stroke": "#a5b4fc",
+      "flat": true
+    }
+  ],
+  "arrows": [
+    {
+      "source": "main",
+      "target": "cli",
+      "flow": "read"
+    },
+    {
+      "source": "main",
+      "target": "gateway",
+      "flow": "read",
+      "route_points": [
+        [
+          516,
+          171
+        ],
+        [
+          516,
+          228
+        ],
+        [
+          594,
+          228
+        ],
+        [
+          594,
+          272
+        ]
+      ]
+    },
+    {
+      "source": "run_agent",
+      "target": "aiagent",
+      "source_port": "bottom",
+      "target_port": "top",
+      "flow": "control",
+      "route_points": [
+        [
+          636,
+          236
+        ],
+        [
+          760,
+          236
+        ],
+        [
+          760,
+          390
+        ],
+        [
+          640,
+          390
+        ]
+      ]
+    },
+    {
+      "source": "acp_entry",
+      "target": "acp_server",
+      "flow": "read"
+    },
+    {
+      "source": "cli",
+      "target": "aiagent",
+      "flow": "control",
+      "route_points": [
+        [
+          220,
+          328
+        ],
+        [
+          220,
+          450
+        ],
+        [
+          430,
+          450
+        ]
+      ]
+    },
+    {
+      "source": "gateway",
+      "target": "aiagent",
+      "flow": "control",
+      "route_points": [
+        [
+          595,
+          328
+        ],
+        [
+          595,
+          414
+        ]
+      ]
+    },
+    {
+      "source": "acp_server",
+      "target": "aiagent",
+      "flow": "control",
+      "route_points": [
+        [
+          1015,
+          328
+        ],
+        [
+          1015,
+          450
+        ],
+        [
+          850,
+          450
+        ]
+      ]
+    },
+    {
+      "source": "aiagent",
+      "target": "prompt",
+      "flow": "data"
+    },
+    {
+      "source": "aiagent",
+      "target": "compressor",
+      "flow": "async"
+    },
+    {
+      "source": "aiagent",
+      "target": "model_tools",
+      "flow": "control"
+    },
+    {
+      "source": "model_tools",
+      "target": "registry",
+      "flow": "control"
+    },
+    {
+      "source": "extensions",
+      "target": "registry",
+      "flow": "data"
+    },
+    {
+      "source": "aiagent",
+      "target": "sessiondb",
+      "source_port": "bottom",
+      "target_port": "top",
+      "flow": "write",
+      "route_points": [
+        [
+          494,
+          488
+        ],
+        [
+          494,
+          520
+        ],
+        [
+          300,
+          520
+        ],
+        [
+          300,
+          700
+        ],
+        [
+          204,
+          700
+        ],
+        [
+          204,
+          734
+        ]
+      ]
+    },
+    {
+      "source": "gateway",
+      "target": "gw_session",
+      "source_port": "right",
+      "target_port": "top",
+      "flow": "read",
+      "route_points": [
+        [
+          730,
+          300
+        ],
+        [
+          940,
+          300
+        ],
+        [
+          940,
+          700
+        ],
+        [
+          466,
+          700
+        ]
+      ]
+    },
+    {
+      "source": "aiagent",
+      "target": "providers",
+      "flow": "read"
+    },
+    {
+      "source": "registry",
+      "target": "backends",
+      "flow": "read",
+      "route_points": [
+        [
+          830,
+          640
+        ],
+        [
+          830,
+          700
+        ],
+        [
+          1068,
+          700
+        ],
+        [
+          1068,
+          734
+        ]
+      ]
+    }
+  ],
+  "legend": [
+    {
+      "flow": "read",
+      "label": "Entry and execution path"
+    },
+    {
+      "flow": "control",
+      "label": "Runtime orchestration"
+    },
+    {
+      "flow": "data",
+      "label": "Prompt and extension data"
+    },
+    {
+      "flow": "write",
+      "label": "Persistence and writeback"
+    },
+    {
+      "flow": "async",
+      "label": "Compression / background flow"
+    }
+  ],
+  "legend_position": "bottom-right",
+  "legend_box": true,
+  "legend_box_fill": "#ffffff"
+}

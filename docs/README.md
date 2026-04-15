@@ -31,13 +31,17 @@ Date: 2026-04-12
 
 优先读：
 
-1. `docs/project-architecture.md`
-2. `docs/hermes-highlights.md`
-3. `docs/architecture-comparison-hermes-codex-openclaw-claude-code.md`
-4. `docs/hermes-roadmap.md`
+1. `docs/diagrams/hermes-project-architecture.svg`
+2. `docs/diagrams/hermes-request-tool-sequence.svg`
+3. `docs/project-architecture.md`
+4. `docs/hermes-highlights.md`
+5. `docs/architecture-comparison-hermes-codex-openclaw-claude-code.md`
+6. `docs/hermes-roadmap.md`
 
 阅读目的分别是：
 
+- `docs/diagrams/hermes-project-architecture.svg`：先用一张图建立入口、壳层、运行时、工具与状态底座的关系
+- `docs/diagrams/hermes-request-tool-sequence.svg`：再看一条典型请求如何进入 AIAgent、触发 tool loop、落到持久化层
 - `docs/project-architecture.md`：先建立系统全貌与调用链
 - `docs/hermes-highlights.md`：看 Hermes 现阶段最值得保留的长板
 - `docs/architecture-comparison-hermes-codex-openclaw-claude-code.md`：看 Hermes 和 Codex / OpenClaw / Claude Code 的设计差异
@@ -61,6 +65,8 @@ Date: 2026-04-12
 
 | 文档 | 适合谁 | 重点内容 |
 | --- | --- | --- |
+| `docs/diagrams/hermes-project-architecture.svg` | 新维护者、架构评审 | 一张图看入口、壳层、AIAgent、中枢模块与状态/后端关系 |
+| `docs/diagrams/hermes-request-tool-sequence.svg` | 新维护者、调试调用链的人 | 一条请求如何进入 `run_conversation()`、触发工具调用、写回会话与输出壳层 |
 | `docs/user-manual.md` | 用户、运维、重度使用者 | 安装、CLI、Gateway、skills、MCP、cron、profiles、排障 |
 | `docs/project-architecture.md` | 维护者、架构评审 | 分层结构、主调用链、工具中枢、状态底座、扩展机制 |
 | `docs/contributor-reading-guide.md` | 新贡献者 | 按功能类型定位代码入口与阅读顺序 |
@@ -84,18 +90,22 @@ Date: 2026-04-12
 ### 路线 B：二次开发者
 
 1. `docs/contributor-reading-guide.md`
-2. `docs/project-architecture.md`
-3. `run_agent.py`
-4. `model_tools.py`
-5. `tools/registry.py`
-6. `toolsets.py`
+2. `docs/diagrams/hermes-project-architecture.svg`
+3. `docs/diagrams/hermes-request-tool-sequence.svg`
+4. `docs/project-architecture.md`
+5. `run_agent.py`
+6. `model_tools.py`
+7. `tools/registry.py`
+8. `toolsets.py`
 
 ### 路线 C：做架构评审或产品对比
 
-1. `docs/project-architecture.md`
-2. `docs/hermes-highlights.md`
-3. `docs/architecture-comparison-hermes-codex-openclaw-claude-code.md`
-4. `docs/hermes-roadmap.md`
+1. `docs/diagrams/hermes-project-architecture.svg`
+2. `docs/diagrams/hermes-request-tool-sequence.svg`
+3. `docs/project-architecture.md`
+4. `docs/hermes-highlights.md`
+5. `docs/architecture-comparison-hermes-codex-openclaw-claude-code.md`
+6. `docs/hermes-roadmap.md`
 
 ## 4. 这份目录怎么维护
 

@@ -49,6 +49,25 @@ Hermes Agent 是一个多界面、多后端、多扩展面的通用 AI Agent 框
 3. ACP Server：`hermes-acp` -> ACP 适配层 -> `AIAgent`
 4. 研究/批处理：`batch_runner.py`、`environments/` 等直接复用 agent 与工具体系
 
+### 3.1 一图总览
+
+如果你想先建立整体心智模型，再逐段往下读代码，建议先看这张图：
+
+![Hermes Agent project architecture overview](diagrams/hermes-project-architecture.svg)
+
+对应关系可以先抓 4 个重点：
+
+- 顶部 3 个入口最终都会汇聚到 `AIAgent`
+- `cli.py`、`gateway/run.py`、`acp_adapter/server.py` 是不同界面壳层
+- `prompt_builder`、`context_compressor`、`model_tools`、`tools/registry` 共同构成运行时中枢
+- `SessionDB`、`gateway/session.py`、provider clients、tool backends 提供状态与执行底座
+
+如果你已经知道模块关系，下一张更值得看的图是请求时序图：
+
+![Hermes request to tool execution sequence](diagrams/hermes-request-tool-sequence.svg)
+
+它更适合回答另一个问题：一次真实请求是如何进入 `AIAgent.run_conversation()`、触发模型 tool call、再回到会话持久化与界面输出的。
+
 ## 4. 总体分层
 
 可以把 Hermes Agent 粗略拆成 6 层：
@@ -145,6 +164,20 @@ Gateway 层额外解决的是：
 - 如果每轮都重新构造 agent 与 system prompt，会把 memory 的实时变更混入历史会话，导致前缀缓存失效、成本飙升。
 
 这也是仓库里多处强调“不要轻易重建 system prompt”的核心背景。
+
+### 5.4 从入口消息到工具执行的时序图
+
+下面这张图把“用户发来一条消息以后，系统到底按什么节奏运转”画了出来：
+
+![Hermes request to tool execution sequence](diagrams/hermes-request-tool-sequence.svg)
+
+阅读这张图时，建议重点抓住 5 个观察点：
+
+- `Interface Shell` 是抽象壳层，CLI、Gateway、ACP 最终都会复用这条“壳层 -> `AIAgent`”契约。
+- `AIAgent` 不是一次性请求代理，而是围绕 `run_conversation()` 做多轮模型往返、tool loop 和状态写回。
+- `Model API` 不直接执行工具，它只返回 tool call 意图；真正的解析与派发发生在 `Tool Router`。
+- `Tool Backend` 代表具体执行面，可以是 terminal、file、web、browser、MCP、delegate_task 等后端。
+- `SessionDB` 同时参与前置历史加载与尾部 transcript/usage 持久化，所以它不是旁路日志，而是主调用链组成部分。
 
 ## 6. AIAgent: 运行时核心
 
@@ -544,18 +577,20 @@ Gateway 是“消息驱动、多会话、多平台”，很多看似多余的 ca
 
 1. `README.md`
 2. `pyproject.toml`
-3. `run_agent.py`
-4. `model_tools.py`
-5. `tools/registry.py`
-6. `toolsets.py`
-7. `agent/prompt_builder.py`
-8. `agent/context_compressor.py`
-9. `hermes_state.py`
-10. `cli.py`
-11. `gateway/run.py`
-12. `gateway/session.py`
-13. `hermes_cli/plugins.py`
-14. `agent/memory_manager.py`
+3. `docs/diagrams/hermes-project-architecture.svg`
+4. `docs/diagrams/hermes-request-tool-sequence.svg`
+5. `run_agent.py`
+6. `model_tools.py`
+7. `tools/registry.py`
+8. `toolsets.py`
+9. `agent/prompt_builder.py`
+10. `agent/context_compressor.py`
+11. `hermes_state.py`
+12. `cli.py`
+13. `gateway/run.py`
+14. `gateway/session.py`
+15. `hermes_cli/plugins.py`
+16. `agent/memory_manager.py`
 
 如果你的改动目标不同，可以按专题阅读：
 
@@ -577,4 +612,3 @@ Hermes Agent 的核心思想不是把所有能力堆进一个大文件，而是�
 如果只看单个模块，Hermes 会显得“为什么这么多状态、这么多缓存、这么多钩子”。但从整体上看，这些设计基本都在解决同一类问题：
 
 - 让 agent 在多轮、多平台、多工具、多扩展环境中还能保持稳定、低成本、可恢复、可演进。
-
