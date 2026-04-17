@@ -577,7 +577,7 @@ class TestSendToPlatformChunking:
 
         sent_calls = []
 
-        async def fake_send(token, chat_id, message, media_files=None, thread_id=None):
+        async def fake_send(token, chat_id, message, media_files=None, thread_id=None, disable_link_previews=False):
             sent_calls.append(media_files or [])
             return {"success": True, "platform": "telegram", "chat_id": chat_id, "message_id": str(len(sent_calls))}
 
@@ -756,6 +756,17 @@ class TestSendTelegramHtmlDetection:
         kwargs = bot.send_message.await_args.kwargs
         assert kwargs["parse_mode"] == "MarkdownV2"
 
+    def test_disable_link_previews_sets_disable_web_page_preview(self, monkeypatch):
+        bot = self._make_bot()
+        _install_telegram_mock(monkeypatch, bot)
+
+        asyncio.run(
+            _send_telegram("tok", "123", "https://example.com", disable_link_previews=True)
+        )
+
+        kwargs = bot.send_message.await_args.kwargs
+        assert kwargs["disable_web_page_preview"] is True
+
     def test_html_with_code_and_pre_tags(self, monkeypatch):
         bot = self._make_bot()
         _install_telegram_mock(monkeypatch, bot)
@@ -804,6 +815,23 @@ class TestSendTelegramHtmlDetection:
         assert bot.send_message.await_count == 2
         second_call = bot.send_message.await_args_list[1].kwargs
         assert second_call["parse_mode"] is None
+
+    def test_transient_bad_gateway_retries_text_send(self, monkeypatch):
+        bot = self._make_bot()
+        bot.send_message = AsyncMock(
+            side_effect=[
+                Exception("502 Bad Gateway"),
+                SimpleNamespace(message_id=2),
+            ]
+        )
+        _install_telegram_mock(monkeypatch, bot)
+
+        with patch("asyncio.sleep", new=AsyncMock()) as sleep_mock:
+            result = asyncio.run(_send_telegram("tok", "123", "hello"))
+
+        assert result["success"] is True
+        assert bot.send_message.await_count == 2
+        sleep_mock.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------

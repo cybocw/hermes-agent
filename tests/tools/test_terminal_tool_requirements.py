@@ -4,6 +4,7 @@ import importlib
 
 from model_tools import get_tool_definitions
 from tools.registry import registry
+from tools import tool_backend_helpers
 
 terminal_tool_module = importlib.import_module("tools.terminal_tool")
 
@@ -45,6 +46,12 @@ class TestTerminalRequirements:
         monkeypatch.setenv("USERPROFILE", str(tmp_path))
         monkeypatch.delenv("MODAL_TOKEN_ID", raising=False)
         monkeypatch.delenv("MODAL_TOKEN_SECRET", raising=False)
+        monkeypatch.setitem(
+            terminal_globals,
+            "managed_nous_tools_enabled",
+            lambda: True,
+        )
+        monkeypatch.setattr(tool_backend_helpers, "managed_nous_tools_enabled", lambda: True)
         monkeypatch.setitem(
             terminal_globals,
             "_get_env_config",

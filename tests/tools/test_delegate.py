@@ -193,13 +193,15 @@ class TestDelegateTask(unittest.TestCase):
         call_args = mock_run.call_args
         self.assertEqual(call_args.kwargs.get("goal") or call_args[1].get("goal", call_args[0][1] if len(call_args[0]) > 1 else None), "Actual task")
 
+    @patch("tools.delegate_tool._build_child_agent")
     @patch("tools.delegate_tool._run_single_child")
-    def test_failed_child_included_in_results(self, mock_run):
+    def test_failed_child_included_in_results(self, mock_run, mock_build_child):
         mock_run.return_value = {
             "task_index": 0, "status": "error",
             "summary": None, "error": "Something broke",
             "api_calls": 0, "duration_seconds": 0.5
         }
+        mock_build_child.return_value = MagicMock()
         parent = _make_mock_parent()
         result = json.loads(delegate_task(goal="Break things", parent_agent=parent))
         self.assertEqual(result["results"][0]["status"], "error")
