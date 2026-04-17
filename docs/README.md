@@ -2,12 +2,13 @@
 
 Date: 2026-04-12
 
-这个 `docs/` 目录里已经不止有“零散说明”，而是逐步形成了 4 类文档：
+这个 `docs/` 目录里已经不止有“零散说明”，而是逐步形成了 5 类文档：
 
 - 新用户使用文档：告诉你怎么安装、配置、排障、日常使用
 - 架构精读文档：解释系统为什么这样设计
 - 贡献者导读文档：告诉你改功能时先看哪里
 - 演进与对比文档：帮助做架构判断、路线评审与竞品分析
+- 验证与回归文档：记录哪些真实链路已经跑通过，哪些问题是实测暴露出来的
 
 如果你第一次进入这个仓库，建议不要直接随机打开文件，而是按目标阅读。
 
@@ -68,6 +69,7 @@ Date: 2026-04-12
 | `docs/diagrams/hermes-project-architecture.svg` | 新维护者、架构评审 | 一张图看入口、壳层、AIAgent、中枢模块与状态/后端关系 |
 | `docs/diagrams/hermes-request-tool-sequence.svg` | 新维护者、调试调用链的人 | 一条请求如何进入 `run_conversation()`、触发工具调用、写回会话与输出壳层 |
 | `docs/user-manual.md` | 用户、运维、重度使用者 | 安装、CLI、Gateway、skills、MCP、cron、profiles、排障 |
+| `docs/cli-real-world-validation.md` | 维护者、测试者、重构前验证的人 | 2026-04-17 CLI 真实用例验证记录，包含通过项与已暴露问题 |
 | `docs/project-architecture.md` | 维护者、架构评审 | 分层结构、主调用链、工具中枢、状态底座、扩展机制 |
 | `docs/contributor-reading-guide.md` | 新贡献者 | 按功能类型定位代码入口与阅读顺序 |
 | `docs/hermes-highlights.md` | 架构评审、作者 | Hermes 当前最强的工程亮点与护城河 |
@@ -86,6 +88,10 @@ Date: 2026-04-12
 2. `docs/user-manual.md`
 3. `hermes setup`
 4. `hermes doctor`
+
+如果你不是“第一次安装”，而是在确认当前仓库到底哪些链路还能跑，建议补读：
+
+5. `docs/cli-real-world-validation.md`
 
 ### 路线 B：二次开发者
 
@@ -136,3 +142,9 @@ Date: 2026-04-12
 3. `hermes chat -Q -t fastmcp_demo -q "请列出 docs 下的 markdown 文件数量，只回复数字"`
 4. `hermes gateway status`
 5. 需要验证 OpenAI 兼容接口时，按 `docs/user-manual.md` 第 15.6 节启动隔离 gateway API smoke
+
+补充：
+
+- 2026-04-17 又额外补了一轮更贴近真实开发的 CLI 验证，单独整理在 `docs/cli-real-world-validation.md`
+- 这轮新增覆盖了 `--resume`、`--worktree`、`--checkpoints` + `/rollback`、技能预加载 `-s`、`sessions export`，以及“让 Hermes 实际修改临时代码并运行”
+- 其中已经确认 3 个值得优先修的问题：`--checkpoints` 回滚失效、`--worktree` 下 cwd 可疑、`-Q` 模式仍有额外输出泄漏

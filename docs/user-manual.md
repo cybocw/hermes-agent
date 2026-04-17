@@ -2035,6 +2035,13 @@ hermes logs list
 
 下面这些命令已经在当前仓库环境里真实跑过，可作为继续使用时的最小回归集。
 
+补充：
+
+- 2026-04-17 又追加了一轮更贴近真实开发场景的验证
+- 详细记录见 `docs/cli-real-world-validation.md`
+- 新增覆盖了 `--resume`、`--worktree`、`--checkpoints` + `/rollback`、`-s` 技能预加载、`sessions export`，以及“让 Hermes 实际修改临时代码并运行”的闭环
+- 如果你当前是在排查 CLI 回归，而不是初次上手，建议直接先读 `docs/cli-real-world-validation.md`
+
 ### 26.1 Quiet + file + skills
 
 命令：
