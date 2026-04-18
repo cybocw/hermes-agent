@@ -13,49 +13,50 @@ so the subparser only sets the attribute when the user explicitly provides it.
 
 import argparse
 import os
-import sys
-from unittest.mock import patch
 
 import pytest
 
 
 def _build_parser():
-    """Build the hermes argument parser from the real code.
-
-    We import the real main() and extract the parser it builds.
-    Since main() is a large function that does much more than parse args,
-    we replicate just the parser structure here to avoid side effects.
-    """
+    """Build a minimal parser matching the real duplicated-flag layout."""
     parser = argparse.ArgumentParser(prog="hermes")
     parser.add_argument("--resume", "-r", metavar="SESSION", default=None)
     parser.add_argument(
-        "--continue", "-c", dest="continue_last", nargs="?",
-        const=True, default=None, metavar="SESSION_NAME",
+        "--continue",
+        "-c",
+        dest="continue_last",
+        nargs="?",
+        const=True,
+        default=None,
+        metavar="SESSION_NAME",
     )
     parser.add_argument("--worktree", "-w", action="store_true", default=False)
     parser.add_argument("--skills", "-s", action="append", default=None)
     parser.add_argument("--yolo", action="store_true", default=False)
     parser.add_argument("--pass-session-id", action="store_true", default=False)
     parser.add_argument("--plain", action="store_true", default=False)
+    parser.add_argument("--tui", action="store_true", default=False)
+    parser.add_argument("--dev", dest="tui_dev", action="store_true", default=False)
 
     subparsers = parser.add_subparsers(dest="command")
     chat = subparsers.add_parser("chat")
-    # These MUST use argparse.SUPPRESS to avoid overwriting parent values
-    chat.add_argument("--yolo", action="store_true",
-                      default=argparse.SUPPRESS)
-    chat.add_argument("--worktree", "-w", action="store_true",
-                      default=argparse.SUPPRESS)
-    chat.add_argument("--skills", "-s", action="append",
-                      default=argparse.SUPPRESS)
-    chat.add_argument("--pass-session-id", action="store_true",
-                      default=argparse.SUPPRESS)
-    chat.add_argument("--plain", action="store_true",
-                      default=argparse.SUPPRESS)
-    chat.add_argument("--resume", "-r", metavar="SESSION_ID",
-                      default=argparse.SUPPRESS)
+    # These MUST use argparse.SUPPRESS to avoid overwriting parent values.
+    chat.add_argument("--yolo", action="store_true", default=argparse.SUPPRESS)
+    chat.add_argument("--worktree", "-w", action="store_true", default=argparse.SUPPRESS)
+    chat.add_argument("--skills", "-s", action="append", default=argparse.SUPPRESS)
+    chat.add_argument("--pass-session-id", action="store_true", default=argparse.SUPPRESS)
+    chat.add_argument("--plain", action="store_true", default=argparse.SUPPRESS)
+    chat.add_argument("--tui", action="store_true", default=argparse.SUPPRESS)
+    chat.add_argument("--dev", dest="tui_dev", action="store_true", default=argparse.SUPPRESS)
+    chat.add_argument("--resume", "-r", metavar="SESSION_ID", default=argparse.SUPPRESS)
     chat.add_argument(
-        "--continue", "-c", dest="continue_last", nargs="?",
-        const=True, default=argparse.SUPPRESS, metavar="SESSION_NAME",
+        "--continue",
+        "-c",
+        dest="continue_last",
+        nargs="?",
+        const=True,
+        default=argparse.SUPPRESS,
+        metavar="SESSION_NAME",
     )
     return parser
 
@@ -93,6 +94,16 @@ class TestFlagBeforeSubcommand:
         args = parser.parse_args(["--plain", "chat"])
         assert getattr(args, "plain", False) is True
 
+    def test_tui_before_chat(self):
+        parser = _build_parser()
+        args = parser.parse_args(["--tui", "chat"])
+        assert getattr(args, "tui", False) is True
+
+    def test_tui_dev_before_chat(self):
+        parser = _build_parser()
+        args = parser.parse_args(["--dev", "chat"])
+        assert getattr(args, "tui_dev", False) is True
+
 
 class TestFlagAfterSubcommand:
     """Flags placed after 'chat' must still work."""
@@ -122,6 +133,16 @@ class TestFlagAfterSubcommand:
         args = parser.parse_args(["chat", "--plain"])
         assert getattr(args, "plain", False) is True
 
+    def test_tui_after_chat(self):
+        parser = _build_parser()
+        args = parser.parse_args(["chat", "--tui"])
+        assert getattr(args, "tui", False) is True
+
+    def test_tui_dev_after_chat(self):
+        parser = _build_parser()
+        args = parser.parse_args(["chat", "--dev"])
+        assert getattr(args, "tui_dev", False) is True
+
 
 class TestNoSubcommandDefaults:
     """When no subcommand is given, flags must work and defaults must hold."""
@@ -140,15 +161,19 @@ class TestNoSubcommandDefaults:
         assert getattr(args, "skills", None) is None
         assert getattr(args, "resume", None) is None
         assert getattr(args, "plain", False) is False
+        assert getattr(args, "tui", False) is False
+        assert getattr(args, "tui_dev", False) is False
 
     def test_defaults_chat_no_flags(self):
         parser = _build_parser()
         args = parser.parse_args(["chat"])
-        # With SUPPRESS, these fall through to parent defaults
+        # With SUPPRESS, these fall through to parent defaults.
         assert getattr(args, "yolo", False) is False
         assert getattr(args, "worktree", False) is False
         assert getattr(args, "skills", None) is None
         assert getattr(args, "plain", False) is False
+        assert getattr(args, "tui", False) is False
+        assert getattr(args, "tui_dev", False) is False
 
 
 class TestYoloEnvVar:
