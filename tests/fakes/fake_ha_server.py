@@ -212,20 +212,32 @@ class FakeHAServer:
             "result": None,
         })
 
-        # Step 6: push events from queue until closed
+        # Step 6: push events from queue until closed. Keep reading from the
+        # socket so client-side close handshakes complete promptly in tests.
         try:
             while not ws.closed:
                 try:
-                    event_data = await asyncio.wait_for(
-                        self._event_queue.get(), timeout=0.1,
-                    )
-                    await ws.send_json({
-                        "id": sub_id,
-                        "type": "event",
-                        "event": event_data,
-                    })
+                    msg = await asyncio.wait_for(ws.receive(), timeout=0.1)
+                    if msg.type in (
+                        aiohttp.WSMsgType.CLOSE,
+                        aiohttp.WSMsgType.CLOSING,
+                        aiohttp.WSMsgType.CLOSED,
+                        aiohttp.WSMsgType.ERROR,
+                    ):
+                        break
                 except asyncio.TimeoutError:
+                    pass
+
+                try:
+                    event_data = self._event_queue.get_nowait()
+                except asyncio.QueueEmpty:
                     continue
+
+                await ws.send_json({
+                    "id": sub_id,
+                    "type": "event",
+                    "event": event_data,
+                })
         except (ConnectionResetError, asyncio.CancelledError):
             pass
 
