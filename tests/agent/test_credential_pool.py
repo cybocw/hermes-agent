@@ -335,6 +335,7 @@ def test_mark_exhausted_and_rotate_persists_status(tmp_path, monkeypatch):
 
 def test_try_refresh_current_updates_only_current_entry(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-cli"))
     _write_auth_store(
         tmp_path,
         {
@@ -391,6 +392,7 @@ def test_try_refresh_current_updates_only_current_entry(tmp_path, monkeypatch):
     assert primary["refresh_token"] == "refresh-new"
     assert secondary["access_token"] == "access-other"
     assert secondary["refresh_token"] == "refresh-other"
+    assert not (tmp_path / "codex-cli" / "auth.json").exists()
 
 
 def test_load_pool_seeds_env_api_key(tmp_path, monkeypatch):

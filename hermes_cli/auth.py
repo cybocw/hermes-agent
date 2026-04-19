@@ -1451,40 +1451,49 @@ def _write_codex_cli_tokens(
     *,
     last_refresh: Optional[str] = None,
 ) -> None:
-    """Write refreshed tokens back to ~/.codex/auth.json.
+    """Update an existing Codex CLI auth.json without creating a new one.
 
     OpenAI OAuth refresh tokens are single-use and rotate on every refresh.
-    When Hermes refreshes a token it consumes the old refresh_token; if we
-    don't write the new pair back, the Codex CLI (or VS Code extension) will
-    fail with ``refresh_token_reused`` on its next refresh attempt.
-
-    This mirrors the Anthropic write-back to ~/.claude/.credentials.json
-    via ``_write_claude_code_credentials()``.
+    Only touch Codex's auth.json when it already exists and contains the
+    ChatGPT metadata current Codex expects (namely ``tokens.id_token``).
+    Creating a fresh file with only access/refresh tokens produces a malformed
+    auth.json that current Codex cannot deserialize.
     """
     codex_home = os.getenv("CODEX_HOME", "").strip()
     if not codex_home:
         codex_home = str(Path.home() / ".codex")
     auth_path = Path(codex_home).expanduser() / "auth.json"
     try:
-        existing: Dict[str, Any] = {}
-        if auth_path.is_file():
-            existing = json.loads(auth_path.read_text(encoding="utf-8"))
+        if not auth_path.is_file():
+            logger.debug("Skipping Codex CLI token write; %s does not exist", auth_path)
+            return
+
+        existing = json.loads(auth_path.read_text(encoding="utf-8"))
         if not isinstance(existing, dict):
-            existing = {}
+            logger.debug("Skipping Codex CLI token write; %s is not a JSON object", auth_path)
+            return
 
         tokens_dict = existing.get("tokens")
         if not isinstance(tokens_dict, dict):
-            tokens_dict = {}
+            logger.debug("Skipping Codex CLI token write; %s is missing tokens", auth_path)
+            return
+        id_token = tokens_dict.get("id_token")
+        if not isinstance(id_token, str) or not id_token.strip():
+            logger.debug(
+                "Skipping Codex CLI token write; %s is missing tokens.id_token",
+                auth_path,
+            )
+            return
+
         tokens_dict["access_token"] = access_token
         tokens_dict["refresh_token"] = refresh_token
         existing["tokens"] = tokens_dict
         if last_refresh is not None:
             existing["last_refresh"] = last_refresh
 
-        auth_path.parent.mkdir(parents=True, exist_ok=True)
         auth_path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
         auth_path.chmod(0o600)
-    except (OSError, IOError) as exc:
+    except (OSError, IOError, json.JSONDecodeError) as exc:
         logger.debug("Failed to write refreshed tokens to %s: %s", auth_path, exc)
 
 
@@ -1635,6 +1644,13 @@ def _import_codex_cli_tokens() -> Optional[Dict[str, str]]:
         payload = json.loads(auth_path.read_text())
         tokens = payload.get("tokens")
         if not isinstance(tokens, dict):
+            return None
+        id_token = tokens.get("id_token")
+        if not isinstance(id_token, str) or not id_token.strip():
+            logger.debug(
+                "Codex CLI tokens at %s are missing id_token metadata — skipping import.",
+                auth_path,
+            )
             return None
         access_token = tokens.get("access_token")
         refresh_token = tokens.get("refresh_token")

@@ -145,19 +145,39 @@ def test_save_codex_tokens_roundtrip(tmp_path, monkeypatch):
 def test_import_codex_cli_tokens(tmp_path, monkeypatch):
     codex_home = tmp_path / "codex-cli"
     codex_home.mkdir(parents=True, exist_ok=True)
+    access_token = _jwt_with_exp(int(time.time()) + 3600)
     (codex_home / "auth.json").write_text(json.dumps({
-        "tokens": {"access_token": "cli-at", "refresh_token": "cli-rt"},
+        "tokens": {
+            "id_token": "id.jwt.token",
+            "access_token": access_token,
+            "refresh_token": "cli-rt",
+        },
     }))
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
 
     tokens = _import_codex_cli_tokens()
     assert tokens is not None
-    assert tokens["access_token"] == "cli-at"
+    assert tokens["access_token"] == access_token
     assert tokens["refresh_token"] == "cli-rt"
 
 
 def test_import_codex_cli_tokens_missing(tmp_path, monkeypatch):
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "nonexistent"))
+    assert _import_codex_cli_tokens() is None
+
+
+def test_import_codex_cli_tokens_requires_id_token(tmp_path, monkeypatch):
+    codex_home = tmp_path / "codex-cli"
+    codex_home.mkdir(parents=True, exist_ok=True)
+    access_token = _jwt_with_exp(int(time.time()) + 3600)
+    (codex_home / "auth.json").write_text(json.dumps({
+        "tokens": {
+            "access_token": access_token,
+            "refresh_token": "cli-rt",
+        },
+    }))
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+
     assert _import_codex_cli_tokens() is None
 
 
@@ -182,21 +202,15 @@ def test_codex_tokens_not_written_to_shared_file(tmp_path, monkeypatch):
     assert data["tokens"]["access_token"] == "hermes-at"
 
 
-def test_write_codex_cli_tokens_creates_file(tmp_path, monkeypatch):
-    """_write_codex_cli_tokens creates ~/.codex/auth.json with refreshed tokens."""
+def test_write_codex_cli_tokens_skips_missing_file(tmp_path, monkeypatch):
+    """_write_codex_cli_tokens should not create a fresh Codex auth.json."""
     codex_home = tmp_path / "codex-cli"
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
 
     _write_codex_cli_tokens("new-access", "new-refresh", last_refresh="2026-04-12T00:00:00Z")
 
     auth_path = codex_home / "auth.json"
-    assert auth_path.exists()
-    data = json.loads(auth_path.read_text())
-    assert data["tokens"]["access_token"] == "new-access"
-    assert data["tokens"]["refresh_token"] == "new-refresh"
-    assert data["last_refresh"] == "2026-04-12T00:00:00Z"
-    # Verify file permissions are restricted
-    assert (auth_path.stat().st_mode & 0o777) == 0o600
+    assert not auth_path.exists()
 
 
 def test_write_codex_cli_tokens_preserves_existing(tmp_path, monkeypatch):
@@ -207,6 +221,7 @@ def test_write_codex_cli_tokens_preserves_existing(tmp_path, monkeypatch):
 
     existing = {
         "tokens": {
+            "id_token": "id.jwt.token",
             "access_token": "old-access",
             "refresh_token": "old-refresh",
             "extra_field": "preserved",
@@ -227,16 +242,25 @@ def test_write_codex_cli_tokens_preserves_existing(tmp_path, monkeypatch):
     assert data["last_refresh"] == "2026-01-01T00:00:00Z"
 
 
-def test_write_codex_cli_tokens_handles_missing_dir(tmp_path, monkeypatch):
-    """_write_codex_cli_tokens creates parent directories if missing."""
-    codex_home = tmp_path / "does" / "not" / "exist"
+def test_write_codex_cli_tokens_skips_malformed_existing_file(tmp_path, monkeypatch):
+    """_write_codex_cli_tokens ignores Codex auth.json files missing id_token."""
+    codex_home = tmp_path / "codex-cli"
+    codex_home.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    auth_path = codex_home / "auth.json"
+    original = {
+        "tokens": {
+            "access_token": "old-access",
+            "refresh_token": "old-refresh",
+        },
+        "last_refresh": "2026-01-01T00:00:00Z",
+    }
+    auth_path.write_text(json.dumps(original))
 
     _write_codex_cli_tokens("at", "rt")
 
-    assert (codex_home / "auth.json").exists()
-    data = json.loads((codex_home / "auth.json").read_text())
-    assert data["tokens"]["access_token"] == "at"
+    data = json.loads(auth_path.read_text())
+    assert data == original
 
 
 def test_refresh_codex_auth_tokens_writes_back_to_cli(tmp_path, monkeypatch):
@@ -252,8 +276,13 @@ def test_refresh_codex_auth_tokens_writes_back_to_cli(tmp_path, monkeypatch):
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
 
     # Write initial CLI tokens
+    access_token = _jwt_with_exp(int(time.time()) + 3600)
     (codex_home / "auth.json").write_text(json.dumps({
-        "tokens": {"access_token": "old-at", "refresh_token": "old-rt"},
+        "tokens": {
+            "id_token": "id.jwt.token",
+            "access_token": access_token,
+            "refresh_token": "old-rt",
+        },
     }))
 
     # Mock the pure refresh to return new tokens
@@ -272,6 +301,7 @@ def test_refresh_codex_auth_tokens_writes_back_to_cli(tmp_path, monkeypatch):
     cli_data = json.loads((codex_home / "auth.json").read_text())
     assert cli_data["tokens"]["access_token"] == "refreshed-at"
     assert cli_data["tokens"]["refresh_token"] == "refreshed-rt"
+    assert cli_data["tokens"]["id_token"] == "id.jwt.token"
 
 
 def test_resolve_returns_hermes_auth_store_source(tmp_path, monkeypatch):
